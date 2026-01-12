@@ -1,0 +1,52 @@
+{
+    "sourceId": "ting55",
+    "sourceName": "恋听网",
+    "sourceUrl": "https://ting55.com",
+    "sourceType": "audio",
+    "enabled": true,
+    "sortOrder": 0,
+    "header": {
+        "Referer": "https://ting55.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "search": {
+        "url": "/search/{{keyword}}",
+        "method": "GET",
+        "charset": "utf-8",
+        "bookList": "css:.category-list ul li",
+        "bookName": "css:h4 a@text",
+        "bookUrl": "css:h4 a@href",
+        "author": "css:.info p@text",
+        "narrator": null,
+        "cover": "css:.img img@src"
+    },
+    "detail": {
+        "bookName": "css:h1@text",
+        "author": "css:.booksub a@text",
+        "narrator": null,
+        "cover": "css:.bookimg img@src",
+        "intro": "css:.intro@text",
+        "chapterList": "css:.plist a"
+    },
+    "chapter": {
+        "chapterName": "css:@text",
+        "chapterUrl": "css:@href"
+    },
+    "audio": {
+        "audioUrl": "api",
+        "apiUrl": "/nlinka",
+        "apiMethod": "POST",
+        "apiBody": "bookId={{_b}}&isPay={{_p}}&page={{_cp}}",
+        "apiHeader": {
+            "xt": "{{_c}}",
+            "l": "{{_l}}",
+            "Origin": "https://ting55.com",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "apiResponseRule": "ourl",
+        "header": {
+            "Referer": "https://ting55.com/"
+        }
+    }
+}

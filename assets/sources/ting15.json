@@ -1,0 +1,52 @@
+{
+    "sourceId": "ting15",
+    "sourceName": "有听网",
+    "sourceUrl": "https://www.ting15.com",
+    "sourceType": "audio",
+    "enabled": true,
+    "sortOrder": 0,
+    "header": {
+        "Referer": "https://www.ting15.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "search": {
+        "url": "/index.php?s=ting-search&wd={{keyword}}",
+        "method": "GET",
+        "charset": "utf-8",
+        "bookList": "css:.category-list ul li",
+        "bookName": "css:.info h4 a@text",
+        "bookUrl": "css:.info h4 a@href",
+        "author": "regex:作者：([^<]+)",
+        "narrator": "regex:播音：([^<]+)",
+        "cover": "css:.img img@src"
+    },
+    "detail": {
+        "bookName": "css:.binfo h1@text",
+        "author": "regex:作者：([^<\\n]+)",
+        "narrator": "regex:播音：([^<\\n]+)",
+        "cover": "css:.cover img@src",
+        "intro": "css:.intro@text",
+        "chapterList": "css:.plist a"
+    },
+    "chapter": {
+        "chapterName": "css:@text",
+        "chapterUrl": "css:@href"
+    },
+    "audio": {
+        "audioUrl": "api",
+        "apiUrl": "/?s=api-getneoplay",
+        "apiMethod": "POST",
+        "apiBody": "bookId={{_b}}&isPay={{_p}}&page={{_cp}}",
+        "apiHeader": {
+            "xt": "{{_c}}",
+            "l": "{{_l}}",
+            "Origin": "https://www.ting15.com",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        "apiResponseRule": "url",
+        "header": {
+            "Referer": "https://www.ting15.com/"
+        }
+    }
+}
