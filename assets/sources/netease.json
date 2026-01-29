@@ -1,0 +1,39 @@
+{
+    "sourceId": "netease_json",
+    "sourceName": "网易云音乐",
+    "sourceUrl": "https://music.cpp-prog.com",
+    "sourceType": "audio",
+    "enabled": true,
+    "sortOrder": 0,
+    "skipDetail": true,
+    "header": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    },
+    "search": {
+        "url": "api.php?types=search&count=20&source=netease&pages=1&name={{keyword}}",
+        "method": "GET",
+        "charset": "utf-8",
+        "bookList": "json:$",
+        "bookName": "json:$.name",
+        "bookUrl": "json:$.url_id",
+        "author": "json:$.artist[0]",
+        "narrator": "json:$.source",
+        "cover": "json:$.pic_id",
+        "intro": "json:$.album"
+    },
+    "detail": {
+        "bookName": "json:$.name",
+        "author": "json:$.artist[0]",
+        "narrator": "json:$.source",
+        "cover": "json:$.pic_id",
+        "intro": "json:$.album"
+    },
+    "chapter": {
+        "chapterName": "json:$.name",
+        "chapterUrl": "json:$.url_id"
+    },
+    "audio": {
+        "apiUrl": "https://music.cpp-prog.com/api.php?types=url&id={{bookId}}&source=netease",
+        "audioUrl": "json:$.url"
+    }
+}

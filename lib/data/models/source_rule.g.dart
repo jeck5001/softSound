@@ -13,6 +13,7 @@ SourceRule _$SourceRuleFromJson(Map<String, dynamic> json) => SourceRule(
   sourceType: json['sourceType'] as String? ?? 'audio',
   enabled: json['enabled'] as bool? ?? true,
   sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+  skipDetail: json['skipDetail'] as bool? ?? false,
   header: (json['header'] as Map<String, dynamic>?)?.map(
     (k, e) => MapEntry(k, e as String),
   ),
@@ -30,6 +31,7 @@ Map<String, dynamic> _$SourceRuleToJson(SourceRule instance) =>
       'sourceType': instance.sourceType,
       'enabled': instance.enabled,
       'sortOrder': instance.sortOrder,
+      'skipDetail': instance.skipDetail,
       'header': instance.header,
       'search': instance.search,
       'detail': instance.detail,

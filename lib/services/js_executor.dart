@@ -217,13 +217,9 @@ class JsExecutor {
         if (key.startsWith('_')) {
           variables[key.substring(1)] = val;
         } else {
-          variables['_${key}'] = val;
+          variables['_$key'] = val;
         }
       });
-
-      String getValue(String key) {
-        return variables[key] ?? '';
-      }
 
       // 处理请求体模板
       String processedBody = apiBody ?? '';

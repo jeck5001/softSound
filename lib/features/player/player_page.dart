@@ -35,6 +35,7 @@ class PlayerPage extends ConsumerWidget {
                   _buildProgressBar(context, playerState, playerNotifier),
                   _buildControls(context, playerState, playerNotifier),
                   _buildSpeedControl(context, playerState, playerNotifier),
+                  _buildSleepTimer(context, playerState, playerNotifier),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -280,6 +281,139 @@ class PlayerPage extends ConsumerWidget {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSleepTimer(
+    BuildContext context,
+    PlayerState playerState,
+    PlayerNotifier playerNotifier,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.bedtime_outlined,
+            size: 20,
+            color: playerState.hasSleepTimer
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey[600],
+          ),
+          const SizedBox(width: 8),
+          if (playerState.hasSleepTimer)
+            GestureDetector(
+              onTap: () => _showSleepTimerDialog(context, playerState, playerNotifier),
+              child: Row(
+                children: [
+                  Text(
+                    '睡眠定时: ${playerState.sleepTimerText}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => playerNotifier.cancelSleepTimer(),
+                    child: Icon(
+                      Icons.close,
+                      size: 18,
+              color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            GestureDetector(
+              onTap: () => _showSleepTimerDialog(context, playerState, playerNotifier),
+              child: Text(
+                '睡眠定时',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showSleepTimerDialog(
+    BuildContext context,
+    PlayerState playerState,
+    PlayerNotifier playerNotifier,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '睡眠定时',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer),
+                title: const Text('15分钟'),
+                onTap: () {
+                  playerNotifier.setSleepTimer(const Duration(minutes: 15));
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer),
+                title: const Text('30分钟'),
+                onTap: () {
+                  playerNotifier.setSleepTimer(const Duration(minutes: 30));
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer),
+                title: const Text('45分钟'),
+                onTap: () {
+                  playerNotifier.setSleepTimer(const Duration(minutes: 45));
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer),
+                title: const Text('60分钟'),
+                onTap: () {
+                  playerNotifier.setSleepTimer(const Duration(minutes: 60));
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.library_books_outlined),
+                title: const Text('播完本章'),
+                onTap: () {
+                  playerNotifier.setSleepTimer(Duration.zero);
+                  Navigator.pop(context);
+                },
+              ),
+              if (playerState.hasSleepTimer)
+                ListTile(
+                  leading: const Icon(Icons.close),
+                  title: const Text('取消定时'),
+                  onTap: () {
+                    playerNotifier.cancelSleepTimer();
+                    Navigator.pop(context);
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -6,9 +6,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../data/models/book.dart';
 import '../../data/models/chapter.dart';
 import '../../data/models/source_rule.dart';
+import '../../data/repositories/book_repository.dart';
+import '../../data/repositories/play_history_repository.dart';
 import '../../services/source_parser.dart';
 import '../../services/player_service.dart';
 import '../source_manager/source_manager_page.dart';
+import '../bookshelf/bookshelf_page.dart';
 
 /// 书籍详情状态
 class BookDetailState {
@@ -16,6 +19,9 @@ class BookDetailState {
   final SourceRule? source;
   final List<Chapter> chapters;
   final bool isLoading;
+  final bool isInBookshelf;
+  final int? savedChapterIndex;
+  final int? savedPosition;
   final String? error;
 
   const BookDetailState({
@@ -23,6 +29,9 @@ class BookDetailState {
     this.source,
     this.chapters = const [],
     this.isLoading = false,
+    this.isInBookshelf = false,
+    this.savedChapterIndex,
+    this.savedPosition,
     this.error,
   });
 
@@ -31,6 +40,9 @@ class BookDetailState {
     SourceRule? source,
     List<Chapter>? chapters,
     bool? isLoading,
+    bool? isInBookshelf,
+    int? savedChapterIndex,
+    int? savedPosition,
     String? error,
   }) {
     return BookDetailState(
@@ -38,6 +50,9 @@ class BookDetailState {
       source: source ?? this.source,
       chapters: chapters ?? this.chapters,
       isLoading: isLoading ?? this.isLoading,
+      isInBookshelf: isInBookshelf ?? this.isInBookshelf,
+      savedChapterIndex: savedChapterIndex ?? this.savedChapterIndex,
+      savedPosition: savedPosition ?? this.savedPosition,
       error: error,
     );
   }
@@ -46,15 +61,21 @@ class BookDetailState {
 /// 书籍详情状态管理
 class BookDetailNotifier extends StateNotifier<BookDetailState> {
   final SourceParser _parser = SourceParser();
+  final BookRepository _bookRepo;
+  final PlayHistoryRepository _historyRepo;
   bool _isCancelled = false;
 
-  BookDetailNotifier() : super(const BookDetailState());
+  BookDetailNotifier(this._bookRepo, this._historyRepo) : super(const BookDetailState());
 
   Future<void> loadBook(Book book, SourceRule source) async {
     _isCancelled = false;
     state = BookDetailState(book: book, source: source, isLoading: true);
 
     try {
+      final isInBookshelf = await _bookRepo.isInBookshelf(book.bookId);
+      final progress = await _historyRepo.getProgress(book.bookId);
+      if (_isCancelled || !mounted) return;
+
       final detailBook = await _parser.getBookDetail(source, book);
       if (_isCancelled || !mounted) return;
 
@@ -65,6 +86,9 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
         book: detailBook ?? book,
         chapters: chapters,
         isLoading: false,
+        isInBookshelf: isInBookshelf,
+        savedChapterIndex: progress?.chapterIndex,
+        savedPosition: progress?.position,
         error: chapters.isEmpty ? '未找到章节' : null,
       );
     } catch (e) {
@@ -73,6 +97,18 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
         isLoading: false,
         error: '加载失败: $e',
       );
+    }
+  }
+
+  Future<void> toggleBookshelf() async {
+    if (state.book == null) return;
+    
+    if (state.isInBookshelf) {
+      await _bookRepo.removeFromBookshelf(state.book!.bookId);
+      state = state.copyWith(isInBookshelf: false);
+    } else {
+      await _bookRepo.addToBookshelf(state.book!);
+      state = state.copyWith(isInBookshelf: true);
     }
   }
 
@@ -92,10 +128,12 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
   }
 }
 
-/// 书籍详情 Provider（不使用 autoDispose 避免异步问题）
+/// 书籍详情 Provider
 final bookDetailProvider =
     StateNotifierProvider<BookDetailNotifier, BookDetailState>((ref) {
-  return BookDetailNotifier();
+  final bookRepo = ref.watch(bookRepositoryProvider);
+  final historyRepo = ref.watch(playHistoryRepositoryProvider);
+  return BookDetailNotifier(bookRepo, historyRepo);
 });
 
 /// 书籍详情页面
@@ -137,10 +175,44 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
               ? _buildNotFound()
               : _buildContent(detailState),
       floatingActionButton: detailState.chapters.isNotEmpty
-          ? FloatingActionButton.extended(
-              onPressed: () => _startPlaying(0),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('开始播放'),
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'bookmark',
+                  onPressed: () {
+                    ref.read(bookDetailProvider.notifier).toggleBookshelf();
+                    ref.invalidate(bookshelfProvider);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          detailState.isInBookshelf ? '已移出书架' : '已加入书架',
+                        ),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  },
+                  child: Icon(
+                    detailState.isInBookshelf
+                        ? Icons.bookmark
+                        : Icons.bookmark_border,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                FloatingActionButton.extended(
+                  heroTag: 'play',
+                  onPressed: () => _startPlaying(
+                    detailState.savedChapterIndex ?? 0,
+                    detailState.savedPosition,
+                  ),
+                  icon: const Icon(Icons.play_arrow),
+                  label: Text(
+                    detailState.savedChapterIndex != null
+                        ? '继续播放'
+                        : '开始播放',
+                  ),
+                ),
+              ],
             )
           : null,
     );
@@ -283,8 +355,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                   ),
                   trailing: chapter.isVip
                       ? const Icon(Icons.lock, color: Colors.orange, size: 18)
-                      : const Icon(Icons.play_arrow),
-                  onTap: () => _startPlaying(index),
+                      : detailState.savedChapterIndex == index
+                          ? const Icon(Icons.play_circle, color: Colors.green)
+                          : const Icon(Icons.play_arrow),
+                  onTap: () => _startPlaying(index, null),
                 );
               },
               childCount: detailState.chapters.length,
@@ -326,7 +400,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     );
   }
 
-  void _startPlaying(int chapterIndex) {
+  void _startPlaying(int chapterIndex, int? position) {
     final detailState = ref.read(bookDetailProvider);
     if (detailState.book == null ||
         detailState.source == null ||
@@ -339,6 +413,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
           book: detailState.book!,
           chapters: detailState.chapters,
           startChapterIndex: chapterIndex,
+          startPosition: position,
         );
 
     context.push('/player');

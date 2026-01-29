@@ -23,8 +23,8 @@
     "detail": {
         "bookName": "css:.binfo h1@text",
         "author": "regex:作者：([^<\\n]+)",
-        "narrator": "regex:播音：([^<\\n]+)",
-        "cover": "css:.cover img@src",
+        "narrator": "regex:播音：(?:<[^>]*>)?([^<\\n]+)",
+        "cover": "css:.bimg img@src",
         "intro": "css:.intro@text",
         "chapterList": "css:.plist a"
     },

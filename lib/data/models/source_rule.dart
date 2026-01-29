@@ -23,6 +23,9 @@ class SourceRule {
   /// 排序权重
   final int sortOrder;
 
+  /// 是否跳过详情页获取（直接从搜索结果进入播放）
+  final bool skipDetail;
+
   /// 全局请求头
   final Map<String, String>? header;
 
@@ -45,6 +48,7 @@ class SourceRule {
     this.sourceType = 'audio',
     this.enabled = true,
     this.sortOrder = 0,
+    this.skipDetail = false,
     this.header,
     required this.search,
     required this.detail,

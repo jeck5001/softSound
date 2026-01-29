@@ -4,12 +4,14 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart';
+import 'package:json_path/json_path.dart';
 import 'package:logger/logger.dart';
 
 import '../data/models/source_rule.dart';
 import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import 'js_executor.dart';
+import 'huanting_captcha_handler.dart';
 
 /// 书源解析服务
 /// 负责根据书源规则解析网页内容，获取书籍、章节、音频信息
@@ -17,24 +19,69 @@ class SourceParser {
   final Dio _dio;
   final Logger _logger = Logger();
   final JsExecutor _jsExecutor = JsExecutor();
+  final HuantingCaptchaHandler _huantingHandler = HuantingCaptchaHandler();
 
   SourceParser({Dio? dio}) : _dio = dio ?? Dio();
 
   /// 根据书源规则搜索书籍
   Future<List<Book>> search(SourceRule source, String keyword) async {
     try {
-      final searchUrlPath = source.search.url.replaceAll('{{keyword}}', Uri.encodeComponent(keyword));
-      final searchUrl = _buildUrl(source.sourceUrl, searchUrlPath);
-      if (searchUrl == null) return [];
+      String? response;
+      
+      // 幻听网需要特殊处理验证码
+      if (source.sourceId == 'huanting') {
+        _logger.d('Using HuantingCaptchaHandler for search');
+        response = await _huantingHandler.search(keyword, source.header);
+      } else {
+        final searchUrlPath = source.search.url.replaceAll('{{keyword}}', Uri.encodeComponent(keyword));
+        final searchUrl = _buildUrl(source.sourceUrl, searchUrlPath);
+        if (searchUrl == null) return [];
 
-      final response = await _request(
-        searchUrl,
-        method: source.search.method,
-        body: source.search.body?.replaceAll('{{keyword}}', keyword),
-        headers: source.header,
-      );
+        response = await _request(
+          searchUrl,
+          method: source.search.method,
+          body: source.search.body?.replaceAll('{{keyword}}', keyword),
+          headers: source.header,
+        );
+      }
 
       if (response == null) return [];
+
+      // Check for JSON
+      if (source.search.bookList.startsWith('json:')) {
+        try {
+          final jsonData = jsonDecode(response);
+          final bookElements = _queryJson(jsonData, source.search.bookList);
+
+          final books = <Book>[];
+          for (final element in bookElements) {
+            final name = _parseJsonRule(element, source.search.bookName);
+            final url = _parseJsonRule(element, source.search.bookUrl);
+
+            if (name == null || url == null) continue;
+
+            // For JSON sources like NetEase, the URL might be an ID. 
+            // We can store it as detailUrl. 
+            // If skipDetail is true, this URL (ID) is used directly for chapter/audio.
+            final bookId = _generateBookId(source.sourceId, url);
+
+            books.add(Book(
+              bookId: bookId,
+              sourceId: source.sourceId,
+              name: name,
+              author: _parseJsonRule(element, source.search.author),
+              narrator: _parseJsonRule(element, source.search.narrator),
+              coverUrl: _parseJsonRule(element, source.search.cover), // Usually direct URL in JSON
+              intro: _parseJsonRule(element, source.search.intro),
+              detailUrl: url, // Store original ID/URL
+            ));
+          }
+          return books;
+        } catch (e) {
+            _logger.e('JSON search failed', error: e);
+            return [];
+        }
+      }
 
       final document = html_parser.parse(response);
       final bookElements = _querySelectorAll(document, source.search.bookList);
@@ -71,6 +118,12 @@ class SourceParser {
 
   /// 获取书籍详情
   Future<Book?> getBookDetail(SourceRule source, Book book) async {
+    // If skipDetail is true, we assume the book info from search is sufficient.
+    // The chapter list will be generated based on the book info (likely single chapter).
+    if (source.skipDetail) {
+      return book;
+    }
+
     try {
       final response = await _request(
         book.detailUrl,
@@ -96,6 +149,20 @@ class SourceParser {
 
   /// 获取章节列表
   Future<List<Chapter>> getChapterList(SourceRule source, Book book) async {
+    // If skipDetail is true, return a single chapter using the book info
+    if (source.skipDetail) {
+      return [
+        Chapter(
+          chapterId: book.bookId,
+          bookId: book.bookId,
+          index: 0,
+          name: book.name,
+          url: book.detailUrl,
+          isVip: false,
+        ),
+      ];
+    }
+
     try {
       String detailUrl = book.detailUrl;
       if (source.detail.chapterListUrl != null && source.detail.chapterListUrl!.isNotEmpty) {
@@ -149,35 +216,71 @@ class SourceParser {
     try {
       String? audioUrl;
 
-      if (source.audio.apiUrl != null && source.audio.apiUrl!.isNotEmpty) {
-        _logger.d('Using WebView to fetch audio URL for: ${chapter.url}');
-        audioUrl = await _jsExecutor.fetchAudioUrlInWebView(
-          pageUrl: chapter.url,
-          apiEndpoint: source.audio.apiUrl!,
-          apiMethod: source.audio.apiMethod,
-          apiBody: source.audio.apiBody,
-          apiHeader: source.audio.apiHeader,
-          apiResponseRule: source.audio.apiResponseRule,
-          headers: source.header,
-        );
-        
-        if (audioUrl != null) {
-          _logger.d('Got audio URL from WebView: $audioUrl');
-          if (audioUrl.startsWith('//')) {
-            audioUrl = 'http:$audioUrl';
+      final chapterFullUrl = _buildUrl(source.sourceUrl, chapter.url) ?? chapter.url;
+
+      // 构建请求头，支持动态Referer
+      Map<String, String> requestHeaders = {
+        ...?source.header,
+      };
+      if (source.audio.header != null) {
+        source.audio.header!.forEach((key, value) {
+          if (value.contains('{{chapterUrl}}')) {
+            requestHeaders[key] = value.replaceAll('{{chapterUrl}}', chapterFullUrl);
+          } else {
+            requestHeaders[key] = value;
           }
-          return audioUrl;
+        });
+      }
+
+      String requestUrl = chapterFullUrl;
+      
+      // 当 audioUrl 规则是 'api' 时，需要先请求章节页面获取 meta 参数
+      // 所以不要将 requestUrl 替换为 API URL
+      final audioRule = source.audio.audioUrl;
+      if (audioRule != 'api' && source.audio.apiUrl != null && source.audio.apiUrl!.isNotEmpty) {
+        String apiUrl = source.audio.apiUrl!;
+        if (apiUrl.contains('{{bookId}}')) {
+             apiUrl = apiUrl.replaceAll('{{bookId}}', chapter.url);
+        }
+        requestUrl = _buildUrl(source.sourceUrl, apiUrl) ?? requestUrl;
+
+        // 对于iframe类型的API（如幻听网的PTaudio2.php），使用章节URL作为Referer
+        if (!requestHeaders.containsKey('Referer') || 
+            requestHeaders['Referer'] == source.sourceUrl ||
+            requestHeaders['Referer'] == '${source.sourceUrl}/') {
+          requestHeaders['Referer'] = chapterFullUrl;
         }
       }
 
+      // Check if we need WebView for JS-based audio extraction
+      if (source.audio.audioUrl.startsWith('js:')) {
+        // Will be handled below in the main audioUrl extraction
+      } else if (source.audio.apiUrl != null && source.audio.apiResponseRule != null && source.audio.apiResponseRule!.startsWith('js:')) {
+         // Only use WebView if the response rule explicitly requires JS execution
+         _logger.d('Using WebView for JS-based API response rule');
+         audioUrl = await _jsExecutor.fetchAudioUrlInWebView(
+           pageUrl: chapter.url,
+           apiEndpoint: source.audio.apiUrl!,
+           apiMethod: source.audio.apiMethod,
+           apiBody: source.audio.apiBody,
+           apiHeader: source.audio.apiHeader,
+           apiResponseRule: source.audio.apiResponseRule,
+           headers: source.header,
+         );
+         if (audioUrl != null) return _buildUrl(source.sourceUrl, audioUrl);
+      }
+
+      _logger.d('Requesting audio from: $requestUrl');
+      _logger.d('With headers: $requestHeaders');
+
       final response = await _request(
-        chapter.url,
-        headers: source.header,
+        requestUrl,
+        headers: requestHeaders,
       );
 
       if (response == null) return null;
 
-      final audioRule = source.audio.audioUrl;
+
       if (audioRule.startsWith('js:')) {
         audioUrl = await _parseJsAudioUrl(
           chapter.url,
@@ -190,7 +293,33 @@ class SourceParser {
         audioUrl = _parseAudioUrl(response, audioRule);
       }
 
-      if (audioUrl == null) return null;
+      if (audioUrl == null) {
+        if (source.sourceId == 'huanting') {
+          _logger.d('Huanting audio extraction failed, trying to unlock session...');
+          final unlocked = await _huantingHandler.unlockSession(source.header);
+          if (unlocked) {
+            _logger.d('Session unlocked, retrying audio request...');
+            if (_huantingHandler.sessionCookie != null) {
+              requestHeaders['Cookie'] = _huantingHandler.sessionCookie!;
+              
+              final retriedResponse = await _request(
+                requestUrl,
+                headers: requestHeaders,
+              );
+              
+              if (retriedResponse != null) {
+                 if (audioRule == 'api') {
+                   audioUrl = await _getAudioUrlFromApi(source, retriedResponse);
+                 } else if (!audioRule.startsWith('js:')) {
+                   audioUrl = _parseAudioUrl(retriedResponse, audioRule);
+                 }
+              }
+            }
+          }
+        }
+        
+        if (audioUrl == null) return null;
+      }
 
       if (audioUrl.startsWith('//')) {
         audioUrl = 'http:$audioUrl';
@@ -243,20 +372,21 @@ class SourceParser {
         }
       }
 
-      _logger.d('Extracted values: ${metaValues.keys.join(', ')}');
+      print('===== Extracted values: $metaValues');
 
       if (source.audio.apiUrl == null) return null;
       String apiUrl = _buildUrl(source.sourceUrl, source.audio.apiUrl!)!;
       
       String? body = source.audio.apiBody;
+      print('===== Original API Body template: $body');
       if (body != null) {
         metaValues.forEach((key, value) {
           body = body!.replaceAll('{{$key}}', value);
         });
       }
 
-      _logger.d('API URL: $apiUrl');
-      _logger.d('API Body: $body');
+      print('===== API URL: $apiUrl');
+      print('===== Final API Body: $body');
 
       final headers = <String, String>{
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -275,7 +405,7 @@ class SourceParser {
         });
       }
 
-      _logger.d('API Headers: $headers');
+      print('===== API Headers: $headers');
 
       final apiResponse = await _request(
         apiUrl,
@@ -296,9 +426,23 @@ class SourceParser {
       try {
         final jsonData = jsonDecode(apiResponse);
         if (jsonData is Map) {
-          final audioUrl = jsonData[responseRule]?.toString();
+          String? audioUrl = jsonData[responseRule]?.toString();
+          
+          if (audioUrl == null || audioUrl.isEmpty) {
+            for (final key in ['url', 'ourl', 'plink', 'play_url', 'audioUrl', 'audio_url', 'src', 'mp3']) {
+              final val = jsonData[key]?.toString();
+              if (val != null && val.isNotEmpty) {
+                audioUrl = val;
+                _logger.d('Found audio URL in fallback key "$key": $audioUrl');
+                break;
+              }
+            }
+          }
+          
           _logger.d('Extracted audio URL: $audioUrl');
-          return audioUrl;
+          if (audioUrl != null && audioUrl.isNotEmpty) {
+            return audioUrl;
+          }
         }
       } catch (e) {
         _logger.d('JSON parse failed, trying regex');
@@ -425,12 +569,20 @@ class SourceParser {
   }
 
   /// 解析音频URL
-  String? _parseAudioUrl(String html, String rule) {
+  String? _parseAudioUrl(String content, String rule) {
     if (rule.startsWith('css:')) {
-      final document = html_parser.parse(html);
+      final document = html_parser.parse(content);
       return _parseCssRule(document.documentElement!, rule.substring(4));
     } else if (rule.startsWith('regex:')) {
-      return _parseRegexRule(html, rule.substring(6));
+      return _parseRegexRule(content, rule.substring(6));
+    } else if (rule.startsWith('json:')) {
+       try {
+         final json = jsonDecode(content);
+         return _parseJsonRule(json, rule);
+       } catch (e) {
+         _logger.w('JSON parse failed in parseAudioUrl', error: e);
+         return null;
+       }
     } else if (rule.startsWith('js:')) {
       _logger.w('JS rules require WebView, not yet implemented');
       return null;
@@ -472,5 +624,58 @@ class SourceParser {
   /// 生成章节ID
   String _generateChapterId(String bookId, int index) {
     return '${bookId}_$index';
+  }
+
+  /// 查询JSON路径
+  List<dynamic> _queryJson(dynamic json, String rule) {
+    if (json == null || rule.isEmpty) return [];
+
+    String path = rule;
+    if (path.startsWith('json:')) {
+      path = path.substring(5);
+    }
+    
+    // If path is just $, return the root object in a list
+    if (path == r'$') {
+      return [json];
+    }
+
+    try {
+      final matches = JsonPath(path).read(json);
+      return matches.map((match) => match.value).toList();
+    } catch (e) {
+      _logger.w('JSON Path query failed: $path', error: e);
+      return [];
+    }
+  }
+
+  /// 解析JSON规则
+  String? _parseJsonRule(dynamic element, String? rule) {
+    if (element == null || rule == null || rule.isEmpty) return null;
+
+    String path = rule;
+    if (path.startsWith('json:')) {
+      path = path.substring(5);
+    }
+    
+    // If the path is just "$", return the element itself (if it's a primitive or we want to convert to string)
+    if (path == r'$') {
+      return element.toString();
+    }
+
+    try {
+      // If the element is a Map, we can query it
+      if (element is Map || element is List) {
+         final matches = JsonPath(path).read(element);
+         if (matches.isNotEmpty) {
+           final value = matches.first.value;
+           return value?.toString();
+         }
+      }
+      return null;
+    } catch (e) {
+      // _logger.w('JSON Path parse failed: $path', error: e);
+      return null;
+    }
   }
 }

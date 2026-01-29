@@ -1,0 +1,41 @@
+{
+    "sourceId": "huanting",
+    "sourceName": "幻听网",
+    "sourceUrl": "https://www.huanting.cc",
+    "sourceType": "audio",
+    "enabled": true,
+    "sortOrder": 1,
+    "header": {
+        "Referer": "https://www.huanting.cc/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "search": {
+        "url": "/Ps.php?q={{keyword}}",
+        "method": "GET",
+        "charset": "utf-8",
+        "bookList": "css:div.book",
+        "bookName": "css:dt a@text",
+        "bookUrl": "css:dt a@href",
+        "author": "css:.lx@text",
+        "narrator": "css:.zb@text",
+        "cover": "css:.img img@src"
+    },
+    "detail": {
+        "bookName": "css:h1@text",
+        "author": "css:.document .author@text",
+        "narrator": "css:.document .announcer@text",
+        "cover": "css:.img img@src",
+        "intro": "css:.abstract@text",
+        "chapterList": "css:#vlink li a"
+    },
+    "chapter": {
+        "chapterName": "css:@text",
+        "chapterUrl": "css:@href"
+    },
+    "audio": {
+        "audioUrl": "css:audio@src||css:iframe@src",
+        "header": {
+            "Referer": "{{chapterUrl}}"
+        }
+    }
+}

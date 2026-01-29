@@ -18,11 +18,11 @@ class SourcesNotifier extends StateNotifier<List<SourceRule>> {
 
   Future<void> _loadBuiltInSources() async {
     final sourceFiles = [
+      'assets/sources/huanting.json',
       'assets/sources/ting55.json',
       'assets/sources/ting15.json',
-      'assets/sources/lrts.json',
       'assets/sources/ting56.json',
-      'assets/sources/520tingshu.json',
+      'assets/sources/netease.json',
     ];
     
     for (final file in sourceFiles) {

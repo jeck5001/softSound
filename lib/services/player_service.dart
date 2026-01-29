@@ -6,6 +6,7 @@ import 'package:logger/logger.dart';
 import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import '../data/models/source_rule.dart';
+import '../data/repositories/play_history_repository.dart';
 import 'source_parser.dart';
 
 /// 全局播放状态
@@ -21,6 +22,8 @@ class PlayerState {
   final bool isLoading;
   final bool isBuffering;
   final String? error;
+  final Duration? sleepTimerRemaining;
+  final bool sleepAfterChapter;
 
   const PlayerState({
     this.currentBook,
@@ -34,6 +37,8 @@ class PlayerState {
     this.isLoading = false,
     this.isBuffering = false,
     this.error,
+    this.sleepTimerRemaining,
+    this.sleepAfterChapter = false,
   });
 
   Chapter? get currentChapter =>
@@ -57,6 +62,14 @@ class PlayerState {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  String get sleepTimerText {
+    if (sleepAfterChapter) return '播完本章';
+    if (sleepTimerRemaining == null) return '';
+    return _formatDuration(sleepTimerRemaining!);
+  }
+
+  bool get hasSleepTimer => sleepTimerRemaining != null || sleepAfterChapter;
+
   PlayerState copyWith({
     Book? currentBook,
     SourceRule? currentSource,
@@ -69,6 +82,9 @@ class PlayerState {
     bool? isLoading,
     bool? isBuffering,
     String? error,
+    Duration? sleepTimerRemaining,
+    bool? sleepAfterChapter,
+    bool clearSleepTimer = false,
   }) {
     return PlayerState(
       currentBook: currentBook ?? this.currentBook,
@@ -82,6 +98,8 @@ class PlayerState {
       isLoading: isLoading ?? this.isLoading,
       isBuffering: isBuffering ?? this.isBuffering,
       error: error,
+      sleepTimerRemaining: clearSleepTimer ? null : (sleepTimerRemaining ?? this.sleepTimerRemaining),
+      sleepAfterChapter: clearSleepTimer ? false : (sleepAfterChapter ?? this.sleepAfterChapter),
     );
   }
 }
@@ -90,14 +108,18 @@ class PlayerState {
 class PlayerNotifier extends StateNotifier<PlayerState> {
   final AudioPlayer _player;
   final SourceParser _parser;
+  final PlayHistoryRepository _historyRepo;
   final Logger _logger = Logger();
   
   StreamSubscription? _positionSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _processingStateSubscription;
+  Timer? _saveProgressTimer;
+  Timer? _sleepTimer;
+  int? _pendingSeekPosition;
 
-  PlayerNotifier()
+  PlayerNotifier(this._historyRepo)
       : _player = AudioPlayer(),
         _parser = SourceParser(),
         super(const PlayerState()) {
@@ -137,7 +159,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     required Book book,
     required List<Chapter> chapters,
     int startChapterIndex = 0,
+    int? startPosition,
   }) async {
+    _saveProgressTimer?.cancel();
+    
     state = PlayerState(
       currentBook: book,
       currentSource: source,
@@ -145,15 +170,43 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       currentChapterIndex: startChapterIndex,
       isLoading: true,
     );
+    
+    _pendingSeekPosition = startPosition;
 
     if (chapters.isNotEmpty) {
       await _loadAndPlayChapter(startChapterIndex);
     }
+    
+    _startProgressSaveTimer();
+  }
+  
+  void _startProgressSaveTimer() {
+    _saveProgressTimer?.cancel();
+    _saveProgressTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _saveProgress(),
+    );
+  }
+  
+  Future<void> _saveProgress() async {
+    if (state.currentBook == null) return;
+    
+    await _historyRepo.saveProgress(
+      bookId: state.currentBook!.bookId,
+      sourceId: state.currentBook!.sourceId,
+      chapterIndex: state.currentChapterIndex,
+      chapterName: state.currentChapter?.name,
+      position: state.position.inMilliseconds,
+      duration: state.duration.inMilliseconds,
+    );
+    _logger.d('保存播放进度: 章节${state.currentChapterIndex}, 位置${state.position.inSeconds}秒');
   }
 
   /// 播放指定章节
   Future<void> playChapter(int index) async {
     if (index < 0 || index >= state.chapters.length) return;
+    
+    await _saveProgress();
     
     state = state.copyWith(
       currentChapterIndex: index,
@@ -161,6 +214,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       error: null,
     );
     
+    _pendingSeekPosition = null;
     await _loadAndPlayChapter(index);
   }
 
@@ -204,6 +258,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           headers: headers,
         ),
       );
+      
+      if (_pendingSeekPosition != null && _pendingSeekPosition! > 0) {
+        await _player.seek(Duration(milliseconds: _pendingSeekPosition!));
+        _pendingSeekPosition = null;
+      }
 
       await _player.play();
       _logger.d('Playback started successfully');
@@ -219,6 +278,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   /// 章节播放完成
   void _onChapterComplete() {
+    if (state.sleepAfterChapter) {
+      _logger.d('播完本章停止');
+      cancelSleepTimer();
+      pause();
+      return;
+    }
     if (state.currentChapterIndex < state.chapters.length - 1) {
       playChapter(state.currentChapterIndex + 1);
     }
@@ -245,8 +310,55 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   /// 停止
   Future<void> stop() async {
+    await _saveProgress();
     await _player.stop();
+    _saveProgressTimer?.cancel();
+    _sleepTimer?.cancel();
     state = const PlayerState();
+  }
+
+  /// 设置睡眠定时器
+  void setSleepTimer(Duration duration) {
+    _sleepTimer?.cancel();
+    
+    if (duration == Duration.zero) {
+      state = state.copyWith(sleepAfterChapter: true, clearSleepTimer: false, sleepTimerRemaining: null);
+      _logger.d('设置睡眠定时: 播完本章');
+      return;
+    }
+    
+    state = state.copyWith(
+      sleepTimerRemaining: duration,
+      sleepAfterChapter: false,
+    );
+    
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (state.sleepTimerRemaining == null) {
+        timer.cancel();
+        return;
+      }
+      
+      final remaining = state.sleepTimerRemaining! - const Duration(seconds: 1);
+      
+      if (remaining <= Duration.zero) {
+        _logger.d('睡眠定时到期，暂停播放');
+        timer.cancel();
+        state = state.copyWith(clearSleepTimer: true);
+        pause();
+      } else {
+        state = state.copyWith(sleepTimerRemaining: remaining);
+      }
+    });
+    
+    _logger.d('设置睡眠定时: ${duration.inMinutes}分钟');
+  }
+
+  /// 取消睡眠定时器
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    state = state.copyWith(clearSleepTimer: true);
+    _logger.d('取消睡眠定时');
   }
 
   /// 跳转到指定位置
@@ -300,6 +412,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   @override
   void dispose() {
+    _saveProgress();
+    _saveProgressTimer?.cancel();
+    _sleepTimer?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playerStateSubscription?.cancel();
@@ -311,5 +426,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
 /// 全局播放器 Provider
 final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
-  return PlayerNotifier();
+  final historyRepo = ref.watch(playHistoryRepositoryProvider);
+  return PlayerNotifier(historyRepo);
 });
