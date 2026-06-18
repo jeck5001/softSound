@@ -69,7 +69,7 @@ class LiuYueSourceAdapter implements TypedSourceAdapter {
 
   @override
   Future<List<Chapter>> getChapterList(SourceRule source, Book book) async {
-    final url = source.sourceUrl.replaceFirst('www.', 'm.') + '/list/${book.detailUrl}';
+    final url = '${source.sourceUrl.replaceFirst('www.', 'm.')}/list/${book.detailUrl}';
     final response = await _get(url, source);
     if (response == null) return [];
 
