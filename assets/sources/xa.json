@@ -1,0 +1,27 @@
+{
+  "sourceId": "XA",
+  "sourceName": "XA听书（喜马拉雅免费）",
+  "sourceUrl": "https://m.ximalaya.com",
+  "sourceType": "typed-audio",
+  "enabled": true,
+  "sortOrder": 10,
+  "header": {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+  },
+  "search": {
+    "url": "typed://XA/search",
+    "bookList": "typed",
+    "bookName": "typed",
+    "bookUrl": "typed"
+  },
+  "detail": {
+    "chapterList": "typed"
+  },
+  "chapter": {
+    "chapterName": "typed",
+    "chapterUrl": "typed"
+  },
+  "audio": {
+    "audioUrl": "typed"
+  }
+}

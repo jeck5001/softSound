@@ -1,0 +1,27 @@
+{
+  "sourceId": "xiaoLiang",
+  "sourceName": "小梁听书（悦听吧）",
+  "sourceUrl": "http://www.yuetingba.cn",
+  "sourceType": "typed-audio",
+  "enabled": true,
+  "sortOrder": 13,
+  "header": {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+  },
+  "search": {
+    "url": "typed://xiaoLiang/search",
+    "bookList": "typed",
+    "bookName": "typed",
+    "bookUrl": "typed"
+  },
+  "detail": {
+    "chapterList": "typed"
+  },
+  "chapter": {
+    "chapterName": "typed",
+    "chapterUrl": "typed"
+  },
+  "audio": {
+    "audioUrl": "typed"
+  }
+}

@@ -21,8 +21,12 @@ class SourcesNotifier extends StateNotifier<List<SourceRule>> {
       'assets/sources/huanting.json',
       'assets/sources/ting55.json',
       'assets/sources/ting15.json',
-      'assets/sources/ting56.json',
       'assets/sources/netease.json',
+      'assets/sources/xa.json',
+      'assets/sources/xiaoku.json',
+      'assets/sources/liuyue.json',
+      'assets/sources/xiaoliang.json',
+      'assets/sources/xiaoqing.json',
     ];
     
     for (final file in sourceFiles) {

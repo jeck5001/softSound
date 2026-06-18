@@ -1,0 +1,27 @@
+{
+  "sourceId": "xiaoKu",
+  "sourceName": "小酷听书（酷我）",
+  "sourceUrl": "http://search.kuwo.cn",
+  "sourceType": "typed-audio",
+  "enabled": true,
+  "sortOrder": 11,
+  "header": {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+  },
+  "search": {
+    "url": "typed://xiaoKu/search",
+    "bookList": "typed",
+    "bookName": "typed",
+    "bookUrl": "typed"
+  },
+  "detail": {
+    "chapterList": "typed"
+  },
+  "chapter": {
+    "chapterName": "typed",
+    "chapterUrl": "typed"
+  },
+  "audio": {
+    "audioUrl": "typed"
+  }
+}

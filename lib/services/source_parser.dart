@@ -12,6 +12,7 @@ import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import 'js_executor.dart';
 import 'huanting_captcha_handler.dart';
+import 'typed_sources/typed_source_registry.dart';
 
 /// 书源解析服务
 /// 负责根据书源规则解析网页内容，获取书籍、章节、音频信息
@@ -25,6 +26,11 @@ class SourceParser {
 
   /// 根据书源规则搜索书籍
   Future<List<Book>> search(SourceRule source, String keyword) async {
+    final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
+    if (typedAdapter != null) {
+      return typedAdapter.search(source, keyword);
+    }
+
     try {
       String? response;
       
@@ -118,6 +124,11 @@ class SourceParser {
 
   /// 获取书籍详情
   Future<Book?> getBookDetail(SourceRule source, Book book) async {
+    final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
+    if (typedAdapter != null) {
+      return typedAdapter.getBookDetail(source, book);
+    }
+
     // If skipDetail is true, we assume the book info from search is sufficient.
     // The chapter list will be generated based on the book info (likely single chapter).
     if (source.skipDetail) {
@@ -149,6 +160,11 @@ class SourceParser {
 
   /// 获取章节列表
   Future<List<Chapter>> getChapterList(SourceRule source, Book book) async {
+    final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
+    if (typedAdapter != null) {
+      return typedAdapter.getChapterList(source, book);
+    }
+
     // If skipDetail is true, return a single chapter using the book info
     if (source.skipDetail) {
       return [
@@ -213,6 +229,11 @@ class SourceParser {
 
   /// 获取音频URL
   Future<String?> getAudioUrl(SourceRule source, Chapter chapter) async {
+    final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
+    if (typedAdapter != null) {
+      return typedAdapter.getAudioUrl(source, chapter);
+    }
+
     try {
       String? audioUrl;
 
