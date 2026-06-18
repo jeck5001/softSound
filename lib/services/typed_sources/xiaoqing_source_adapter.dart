@@ -55,7 +55,7 @@ class XiaoQingSourceAdapter implements TypedSourceAdapter {
   Book? _bookFromChannel(SourceRule source, dynamic item, String keyword) {
     if (item is! Map) return null;
     final channel = Map<String, dynamic>.from(item);
-    final id = SourceUtils.stringValue(channel, ['id', 'parent_id']);
+    final id = SourceUtils.stringValue(channel, ['parent_id', 'id']);
     final title = SourceUtils.stringValue(channel, ['title']);
     if (id == null || title == null || title.contains('凯叔')) return null;
     if (!title.contains(keyword)) return null;
