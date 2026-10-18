@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/routes.dart';
+import 'theme/app_strings.dart';
+import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -28,33 +31,14 @@ class SoftSoundApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    final appearance = ref.watch(appearanceProvider);
 
     return MaterialApp.router(
-      title: 'SoftSound 听书',
+      title: '${AppStrings.appName} · 有声书',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6750A4),
-          brightness: Brightness.light,
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6750A4),
-          brightness: Brightness.dark,
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-        ),
-      ),
-      themeMode: ThemeMode.system,
+      theme: AppTheme.light(accent: appearance.accent),
+      darkTheme: AppTheme.dark(accent: appearance.accent),
+      themeMode: appearance.mode.themeMode,
       routerConfig: router,
     );
   }

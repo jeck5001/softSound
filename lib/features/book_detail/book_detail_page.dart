@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../data/models/book.dart';
 import '../../data/models/chapter.dart';
@@ -10,8 +9,14 @@ import '../../data/repositories/book_repository.dart';
 import '../../data/repositories/play_history_repository.dart';
 import '../../services/source_parser.dart';
 import '../../services/player_service.dart';
+import '../../services/audio_downloader.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_strings.dart';
+import '../../theme/app_widgets.dart';
+import '../../theme/brand_widgets.dart';
 import '../source_manager/source_manager_page.dart';
 import '../bookshelf/bookshelf_page.dart';
+import '../downloads/downloads_notifier.dart';
 
 /// 书籍详情状态
 class BookDetailState {
@@ -89,13 +94,13 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
         isInBookshelf: isInBookshelf,
         savedChapterIndex: progress?.chapterIndex,
         savedPosition: progress?.position,
-        error: chapters.isEmpty ? '未找到章节' : null,
+        error: chapters.isEmpty ? AppStrings.chapterNotFound : null,
       );
     } catch (e) {
       if (_isCancelled || !mounted) return;
       state = state.copyWith(
         isLoading: false,
-        error: '加载失败: $e',
+        error: '${AppStrings.loadFailedPrefix}$e',
       );
     }
   }
@@ -140,7 +145,10 @@ final bookDetailProvider =
 class BookDetailPage extends ConsumerStatefulWidget {
   final String bookId;
 
-  const BookDetailPage({super.key, required this.bookId});
+  /// 跳转方已知的书名（轮播/榜单卡自带标题，避免详情加载前显示占位名）。
+  final String? initialName;
+
+  const BookDetailPage({super.key, required this.bookId, this.initialName});
 
   @override
   ConsumerState<BookDetailPage> createState() => _BookDetailPageState();
@@ -150,252 +158,642 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
   @override
   void initState() {
     super.initState();
-    _loadBookFromSearch();
+    // 首帧后再加载：loadBook 同步更新 state，
+    // 在 initState 里直接调用会抛 "setState during build"。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadBookFromSearch();
+    });
   }
 
-  void _loadBookFromSearch() {
-    final sources = ref.read(sourcesProvider);
-    
+  /// 按 bookId 前缀找到对应书源并加载详情。
+  ///
+  /// bookId 形如 `kuwo_16150041` / `lrts_94326793`，
+  /// 前缀即 sourceId；再构造一个最小 Book 触发完整的
+  /// getBookDetail → getChapterList 流程。
+  Future<void> _loadBookFromSearch() async {
+    // 书源是异步从 assets 加载的；进入详情页时可能还是空列表。
+    // 轮询等待最多 3 秒。
+    var sources = ref.read(sourcesProvider);
+    for (var i = 0; i < 12 && sources.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      sources = ref.read(sourcesProvider);
+    }
+    if (sources.isEmpty) return; // 书源彻底没加载出来，维持 not-found
+
     for (final source in sources) {
       final bookIdPrefix = '${source.sourceId}_';
-      if (widget.bookId.startsWith(bookIdPrefix)) {
-        return;
-      }
+      if (!widget.bookId.startsWith(bookIdPrefix)) continue;
+
+      final upstreamId = widget.bookId.substring(bookIdPrefix.length);
+      final book = Book(
+        bookId: widget.bookId,
+        sourceId: source.sourceId,
+        name: (widget.initialName?.isNotEmpty ?? false)
+            ? widget.initialName!
+            : AppStrings.loadingBookInfo,
+        // 分类页/搜索页跳转时只有 id；详情由 getBookDetail 补全
+        detailUrl: upstreamId,
+      );
+      ref.read(bookDetailProvider.notifier).loadBook(book, source);
+      return;
     }
+
+    // 没有匹配的书源：书源列表为空（未加载完）或 id 前缀不认识 → 显示 not-found
+    if (sources.isEmpty) return;
+    final fallbackSource = sources.firstWhere(
+      (s) => s.enabled,
+      orElse: () => sources.first,
+    );
+    final slash = widget.bookId.indexOf('_');
+    final fallback = Book(
+      bookId: widget.bookId,
+      sourceId: fallbackSource.sourceId,
+      name: AppStrings.loadingBookInfo,
+      detailUrl: slash >= 0
+          ? widget.bookId.substring(slash + 1)
+          : widget.bookId,
+    );
+    ref.read(bookDetailProvider.notifier).loadBook(fallback, fallbackSource);
   }
+
+  int _tab = 1; // 0 简介 / 1 目录（聆阅默认落在目录）
+  bool _asc = true;
+  int _rangePage = 0;
 
   @override
   Widget build(BuildContext context) {
     final detailState = ref.watch(bookDetailProvider);
 
     return Scaffold(
-      body: detailState.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : detailState.book == null
-              ? _buildNotFound()
-              : _buildContent(detailState),
-      floatingActionButton: detailState.chapters.isNotEmpty
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton(
-                  heroTag: 'bookmark',
-                  onPressed: () {
-                    ref.read(bookDetailProvider.notifier).toggleBookshelf();
-                    ref.invalidate(bookshelfProvider);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          detailState.isInBookshelf ? '已移出书架' : '已加入书架',
-                        ),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  child: Icon(
-                    detailState.isInBookshelf
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                FloatingActionButton.extended(
-                  heroTag: 'play',
-                  onPressed: () => _startPlaying(
-                    detailState.savedChapterIndex ?? 0,
-                    detailState.savedPosition,
-                  ),
-                  icon: const Icon(Icons.play_arrow),
-                  label: Text(
-                    detailState.savedChapterIndex != null
-                        ? '继续播放'
-                        : '开始播放',
-                  ),
-                ),
-              ],
-            )
-          : null,
+      body: SafeArea(
+        child: detailState.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : detailState.book == null
+                ? _buildNotFound()
+                : _buildContent(detailState),
+      ),
     );
   }
 
   Widget _buildNotFound() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.book_outlined, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            '请从搜索结果进入书籍详情',
-            style: TextStyle(color: Colors.grey[600], fontSize: 16),
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: () => context.go('/'),
-            child: const Text('返回首页'),
-          ),
-        ],
-      ),
+    return AppEmptyState(
+      icon: Icons.book_outlined,
+      title: AppStrings.bookNotExist,
+      description: AppStrings.offlineHint1,
+      actionLabel: AppStrings.backHome,
+      onAction: () => context.go('/home'),
     );
   }
 
-  Widget _buildContent(BookDetailState detailState) {
-    final book = detailState.book!;
+  /// 聆阅详情页版式：渐变头 + 描边封面 + 立即播放 + meta chips + 简介/目录分段。
+  Widget _buildContent(BookDetailState d) {
+    final c = context.appColors;
+    final book = d.book!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          expandedHeight: 250,
-          pinned: true,
-          flexibleSpace: FlexibleSpaceBar(
-            title: Text(
-              book.name,
-              style: const TextStyle(fontSize: 16),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    // 章节区间（聆阅 100 集一页）
+    final total = d.chapters.length;
+    final ranges = <(int, int)>[
+      for (var i = 0; i < total; i += 100)
+        (i, i + 100 > total ? total : i + 100),
+    ];
+    if (_rangePage >= ranges.length) _rangePage = 0;
+    var visible = ranges.isEmpty
+        ? <Chapter>[]
+        : d.chapters.sublist(ranges[_rangePage].$1, ranges[_rangePage].$2);
+    if (!_asc) visible = visible.reversed.toList();
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 40),
+      children: [
+        // 渐变头部区
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: isDark
+                  ? [
+                      const Color(0xFF7C3AED).withValues(alpha: 0.28),
+                      c.background,
+                    ]
+                  : [
+                      const Color(0xFFE4DAFA),
+                      c.background,
+                    ],
             ),
-            background: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (book.coverUrl != null && book.coverUrl!.isNotEmpty)
-                  CachedNetworkImage(
-                    imageUrl: book.coverUrl!,
-                    fit: BoxFit.cover,
-                    errorWidget: (context, url, error) =>
-                        _buildDefaultBackground(),
-                  )
-                else
-                  _buildDefaultBackground(),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.7),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  LyIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      onTap: () => context.pop()),
+                  const Spacer(),
+                  if (total > 0)
+                    LyIconButton(
+                      icon: Icons.download_outlined,
+                      onTap: () => _showDownloadSheet(book, d),
+                    ),
+                  const SizedBox(width: 10),
+                  LyIconButton(
+                    icon: d.isInBookshelf
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    bg: d.isInBookshelf
+                        ? const Color(0xFFE11D48)
+                        : const Color(0xFFFDF2F4),
+                    fg: d.isInBookshelf
+                        ? Colors.white
+                        : const Color(0xFFE11D48),
+                    onTap: () {
+                      ref
+                          .read(bookDetailProvider.notifier)
+                          .toggleBookshelf();
+                      ref.invalidate(bookshelfProvider);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LyCover(
+                    url: book.coverUrl ?? '',
+                    width: 128,
+                    height: 172,
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LyDarkChip(
+                          book.sourceId == 'lrts'
+                              ? '懒人'
+                              : (book.sourceId == 'xiaoKu' ? '酷我' : '有声'),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          book.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: c.foreground,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        if (book.author?.isNotEmpty ?? false)
+                          Text(
+                            book.author!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: c.mutedForeground, fontSize: 14),
+                          ),
+                        if (book.narrator?.isNotEmpty ?? false) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${book.narrator} 演播',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: c.mutedForeground, fontSize: 13),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (book.author != null && book.author!.isNotEmpty)
-                  _buildInfoRow('作者', book.author!),
-                if (book.narrator != null && book.narrator!.isNotEmpty)
-                  _buildInfoRow('播音', book.narrator!),
-                const SizedBox(height: 16),
-                const Text(
-                  '简介',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  book.intro ?? '暂无简介',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '章节列表 (${detailState.chapters.length})',
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    if (detailState.error != null)
-                      Text(
-                        detailState.error!,
-                        style:
-                            const TextStyle(color: Colors.red, fontSize: 12),
+                ],
+              ),
+              const SizedBox(height: 18),
+              // 立即播放 + 收藏
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: total == 0
+                          ? null
+                          : () => _startPlaying(
+                              d.savedChapterIndex ?? 0,
+                              d.savedPosition),
+                      child: Container(
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7C3AED),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: lyHardShadow,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 26),
+                            const SizedBox(width: 6),
+                            Text(
+                              d.savedChapterIndex != null
+                                  ? '继续播放'
+                                  : '立即播放',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                  ],
-                ),
-              ],
-            ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // meta chips（聆阅：时长 / 集数 / 分类）
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  if (_totalDurationLabel(total > 0 ? d.chapters : const [])
+                      .isNotEmpty)
+                    LyMetaChip(
+                      _totalDurationLabel(d.chapters),
+                      color: const Color(0xFF0D9488),
+                      icon: Icons.schedule_rounded,
+                    ),
+                  LyMetaChip(
+                    '$total 集',
+                    color: const Color(0xFF7C3AED),
+                  ),
+                  LyMetaChip(
+                    book.sourceId == 'lrts'
+                        ? '懒人听书'
+                        : (book.sourceId == 'xiaoKu' ? '酷我听书' : '有声书'),
+                    color: const Color(0xFFEA580C),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        if (detailState.chapters.isEmpty && !detailState.isLoading)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Center(
-                child: Text(
-                  detailState.error ?? '暂无章节',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+
+        // 简介 / 目录 分段
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: LySegment(
+            labels: const ['简介', '目录'],
+            index: _tab,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+        ),
+
+        if (_tab == 0)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LyBrutalCard(
+              child: Text(
+                book.intro?.isNotEmpty ?? false
+                    ? book.intro!
+                    : AppStrings.noIntro,
+                style: TextStyle(
+                    color: c.mutedForeground, fontSize: 14, height: 1.6),
               ),
             ),
           )
-        else
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final chapter = detailState.chapters[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    radius: 16,
-                    child: Text(
-                      '${index + 1}',
-                      style: const TextStyle(fontSize: 12),
+        else ...[
+          // 区间 chips + 排序
+          if (total > 100 || total > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (var r = 0; r < ranges.length; r++)
+                    GestureDetector(
+                      onTap: () => setState(() => _rangePage = r),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: r == _rangePage
+                              ? const Color(0xFF7C3AED)
+                              : c.card,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: r == _rangePage
+                                ? const Color(0xFF7C3AED)
+                                : const Color(0xFFDDD6FE),
+                          ),
+                          boxShadow:
+                              r == _rangePage ? lyHardShadowSm : null,
+                        ),
+                        child: Text(
+                          '${ranges[r].$1 + 1}-${ranges[r].$2}集',
+                          style: TextStyle(
+                            color: r == _rangePage
+                                ? Colors.white
+                                : c.foreground,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: () => setState(() => _asc = !_asc),
+                    child: LyMetaChip(
+                      _asc ? '正序' : '倒序',
+                      color: c.mutedForeground,
+                      icon: Icons.swap_vert_rounded,
                     ),
                   ),
-                  title: Text(
-                    chapter.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: chapter.isVip
-                      ? const Icon(Icons.lock, color: Colors.orange, size: 18)
-                      : detailState.savedChapterIndex == index
-                          ? const Icon(Icons.play_circle, color: Colors.green)
-                          : const Icon(Icons.play_arrow),
-                  onTap: () => _startPlaying(index, null),
-                );
-              },
-              childCount: detailState.chapters.length,
+                ],
+              ),
             ),
-          ),
-        const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
+
+          if (total == 0)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Text(
+                  d.error ?? '暂无章节',
+                  style: TextStyle(color: c.mutedForeground),
+                ),
+              ),
+            )
+          else
+            for (var i = 0; i < visible.length; i++)
+              _chapterRow(d, visible[i], _asc
+                  ? ranges[_rangePage].$1 + i
+                  : ranges[_rangePage].$2 - 1 - i),
+        ],
       ],
     );
   }
 
-  Widget _buildDefaultBackground() {
-    return Container(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Icon(
-        Icons.headphones,
-        size: 80,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
+  /// 章节行（聆阅：白卡 + 序号紫块 + 时长）。
+  Widget _chapterRow(BookDetailState d, Chapter chapter, int realIndex) {
+    final c = context.appColors;
+    final saved = d.savedChapterIndex == realIndex;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: GestureDetector(
+        onTap: () => _startPlaying(realIndex, null),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+                color: saved ? const Color(0xFF7C3AED) : c.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDE9FE),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${realIndex + 1}',
+                  style: const TextStyle(
+                    color: Color(0xFF6D28D9),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  chapter.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: c.foreground, fontSize: 14),
+                ),
+              ),
+              if (chapter.isVip)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Icon(Icons.lock_outline,
+                      size: 16, color: Color(0xFFEA580C)),
+                ),
+              Text(
+                _fmtDur(chapter.duration),
+                style: TextStyle(color: c.mutedForeground, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Text(
-            '$label: ',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
+  static String _fmtDur(int? s) {
+    if (s == null || s <= 0) return '';
+    final m = s ~/ 60, ss = s % 60;
+    return '$m:${ss.toString().padLeft(2, '0')}';
+  }
+
+  static String _totalDurationLabel(List<Chapter> chs) {
+    final s = chs.fold<int>(0, (a, b) => a + (b.duration ?? 0));
+    if (s <= 0) return '';
+    final h = s ~/ 3600, m = (s % 3600) ~/ 60;
+    return h > 0 ? '${h}h ${m}m' : '${m}m';
+  }
+
+  /// 下载选集弹层 —— 对应聆阅的「选集下载 / 自定义下载」。
+  ///
+  /// 勾选章节后串行下载，进度实时写入 `download_chapters` 表。
+  Future<void> _showDownloadSheet(Book book, BookDetailState detailState) async {
+    final source = detailState.source;
+    if (source == null) return;
+
+    final selected = <int>{};
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            final c = sheetContext.appColors;
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * 0.7,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              AppStrings.downloadCustom,
+                              style: TextStyle(
+                                color: c.foreground,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                if (selected.length ==
+                                    detailState.chapters.length) {
+                                  selected.clear();
+                                } else {
+                                  selected
+                                    ..clear()
+                                    ..addAll(List.generate(
+                                      detailState.chapters.length,
+                                      (i) => i,
+                                    ));
+                                }
+                              });
+                            },
+                            child: Text(
+                              selected.length == detailState.chapters.length
+                                  ? AppStrings.downloadCancelSelectAll
+                                  : AppStrings.downloadSelectAll,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () =>
+                                Navigator.of(sheetContext).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '${AppStrings.downloadSelectChapters}'
+                          '（已选 ${selected.length}）',
+                          style:
+                              TextStyle(color: c.mutedForeground, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    Divider(height: 16, color: c.border),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: detailState.chapters.length,
+                        itemBuilder: (context, i) {
+                          final ch = detailState.chapters[i];
+                          return CheckboxListTile(
+                            dense: true,
+                            value: selected.contains(i),
+                            onChanged: (v) => setSheetState(() {
+                              if (v ?? false) {
+                                selected.add(i);
+                              } else {
+                                selected.remove(i);
+                              }
+                            }),
+                            title: Text(
+                              ch.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: c.foreground,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: ch.duration == null
+                                ? null
+                                : Text(
+                                    '${ch.duration}${AppStrings.unitSecond}',
+                                    style: TextStyle(
+                                      color: c.mutedForeground,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          icon: const Icon(Icons.download),
+                          label: Text(
+                            selected.isEmpty
+                                ? AppStrings.downloadSelectChapters
+                                : '${AppStrings.startDownload} (${selected.length})',
+                          ),
+                          onPressed: selected.isEmpty
+                              ? null
+                              : () async {
+                                  Navigator.of(sheetContext).pop();
+                                  await _startDownload(
+                                    book: book,
+                                    source: source,
+                                    chapters: detailState.chapters
+                                        .where((ch) =>
+                                            selected.contains(ch.index))
+                                        .toList(),
+                                  );
+                                },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 执行下载并给出结果反馈。
+  Future<void> _startDownload({
+    required Book book,
+    required SourceRule source,
+    required List<Chapter> chapters,
+  }) async {
+    final downloader = ref.read(audioDownloaderProvider);
+    final messenger = ScaffoldMessenger.of(context);
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text(AppStrings.downloadStarted)),
+    );
+
+    final result = await downloader.downloadChapters(
+      bookId: book.bookId,
+      sourceId: source.sourceId,
+      chapters: chapters,
+      source: source,
+    );
+
+    // 刷新下载页与缓存用量
+    ref.read(downloadsProvider.notifier).refresh();
+    ref.invalidate(cacheUsageProvider);
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          '${AppStrings.downloaded} ${result.ok}'
+          '${result.failed > 0 ? ' · ${AppStrings.downloadFailed} ${result.failed}' : ''}',
+        ),
       ),
     );
   }

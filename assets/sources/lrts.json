@@ -1,0 +1,28 @@
+{
+  "sourceId": "lrts",
+  "sourceName": "懒人听书",
+  "sourceUrl": "https://m.lrts.me",
+  "sourceType": "typed-audio",
+  "enabled": true,
+  "sortOrder": 15,
+  "header": {
+    "Referer": "https://m.lrts.me/",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 12; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+  },
+  "search": {
+    "url": "typed://lrts/search",
+    "bookList": "typed",
+    "bookName": "typed",
+    "bookUrl": "typed"
+  },
+  "detail": {
+    "chapterList": "typed"
+  },
+  "chapter": {
+    "chapterName": "typed",
+    "chapterUrl": "typed"
+  },
+  "audio": {
+    "audioUrl": "typed"
+  }
+}

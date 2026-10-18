@@ -3,6 +3,7 @@ import 'package:soft_sound/data/models/book.dart';
 import 'package:soft_sound/data/models/chapter.dart';
 import 'package:soft_sound/data/models/source_rule.dart';
 import 'package:soft_sound/services/typed_sources/typed_source_adapter.dart';
+import 'package:soft_sound/theme/playback_settings.dart';
 import 'package:soft_sound/services/typed_sources/typed_source_registry.dart';
 
 class FakeAdapter implements TypedSourceAdapter {
@@ -20,7 +21,15 @@ class FakeAdapter implements TypedSourceAdapter {
       const [];
 
   @override
-  Future<String?> getAudioUrl(SourceRule source, Chapter chapter) async => null;
+  Future<String?> getLyric(SourceRule source, Chapter chapter) async => null;
+
+  @override
+  Future<String?> getAudioUrl(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async =>
+      null;
 }
 
 void main() {

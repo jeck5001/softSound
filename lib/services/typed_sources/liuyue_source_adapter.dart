@@ -7,6 +7,7 @@ import 'package:logger/logger.dart';
 import '../../data/models/book.dart';
 import '../../data/models/chapter.dart';
 import '../../data/models/source_rule.dart';
+import '../../theme/playback_settings.dart';
 import 'source_utils.dart';
 import 'typed_source_adapter.dart';
 
@@ -97,8 +98,16 @@ class LiuYueSourceAdapter implements TypedSourceAdapter {
     }
   }
 
+  /// 上游无字幕接口（字节码确认 lrts/六翼/喜马拉雅等播放响应不含 lyric）。
   @override
-  Future<String?> getAudioUrl(SourceRule source, Chapter chapter) async {
+  Future<String?> getLyric(SourceRule source, Chapter chapter) async => null;
+
+  @override
+  Future<String?> getAudioUrl(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async {
     return chapter.audioUrl?.isNotEmpty == true ? chapter.audioUrl : null;
   }
 

@@ -154,7 +154,6 @@ class HuantingCaptchaHandler {
         'shuangwen',
       ];
       
-      final matchedBooks = <String>[];
       final keywordLower = keyword.toLowerCase();
       
       // 遍历分类页面查找匹配的书籍
@@ -551,7 +550,6 @@ class HuantingCaptchaHandler {
   /// 简单的模板匹配
   int _templateMatch(img.Image background, img.Image template, int yPoint) {
     final bgWidth = background.width;
-    final bgHeight = background.height;
     final tplWidth = template.width;
     final tplHeight = template.height;
     
@@ -587,7 +585,8 @@ class HuantingCaptchaHandler {
     return bestX;
   }
   
-  /// 使用边缘检测找缺口
+  // 备用方案：当模板匹配失败时的边缘检测找缺口算法，暂未启用。
+  // ignore: unused_element
   int _findGapByEdgeDetection(img.Image image) {
     final width = image.width;
     final height = image.height;

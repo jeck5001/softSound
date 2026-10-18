@@ -6,6 +6,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../data/models/book.dart';
 import '../../data/models/source_rule.dart';
 import '../../services/source_parser.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_strings.dart';
+import '../../theme/app_widgets.dart';
 import '../source_manager/source_manager_page.dart';
 import '../book_detail/book_detail_page.dart';
 
@@ -56,7 +59,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
       if (enabledSources.isEmpty) {
         state = state.copyWith(
           isLoading: false,
-          error: '请先添加并启用书源',
+          error: AppStrings.searchNoSource,
         );
         return;
       }
@@ -80,12 +83,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
         isLoading: false,
         results: allResults,
         groupedResults: grouped,
-        error: allResults.isEmpty ? '未找到相关书籍' : null,
+        error: allResults.isEmpty ? AppStrings.searchNoResult : null,
       );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
-        error: '搜索失败: $e',
+        error: '${AppStrings.searchFailedPrefix}$e',
       );
     }
   }
@@ -103,7 +106,10 @@ final searchProvider = StateNotifierProvider.autoDispose<SearchNotifier, SearchS
 
 /// 搜索页面
 class SearchPage extends ConsumerStatefulWidget {
-  const SearchPage({super.key});
+  /// 进入即搜的关键词（聆阅 `/search?source=` 同款上下文，支持深链与调试）。
+  final String? initialQuery;
+
+  const SearchPage({super.key, this.initialQuery});
 
   @override
   ConsumerState<SearchPage> createState() => _SearchPageState();
@@ -117,6 +123,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   void initState() {
     super.initState();
     _focusNode.requestFocus();
+    final q = widget.initialQuery?.trim() ?? '';
+    if (q.isNotEmpty) {
+      _searchController.text = q;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _onSearch(q);
+      });
+    }
   }
 
   @override
@@ -128,6 +141,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.appColors;
     final searchState = ref.watch(searchProvider);
 
     return Scaffold(
@@ -136,8 +150,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         title: TextField(
           controller: _searchController,
           focusNode: _focusNode,
+          style: TextStyle(color: c.foreground),
           decoration: InputDecoration(
-            hintText: '搜索有声书',
+            hintText: AppStrings.searchHint,
+            hintStyle: TextStyle(color: c.mutedForeground),
             border: InputBorder.none,
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
@@ -165,26 +181,19 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('搜索'),
+                : const Text(AppStrings.searchAction),
           ),
         ],
       ),
-      body: _buildBody(searchState),
+      body: _buildBody(context, searchState),
     );
   }
 
-  Widget _buildBody(SearchState searchState) {
+  Widget _buildBody(BuildContext context, SearchState searchState) {
+    final c = context.appColors;
+
     if (searchState.isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('正在搜索...'),
-          ],
-        ),
-      );
+      return const AppLoadingState(message: AppStrings.searching);
     }
 
     if (searchState.error != null) {
@@ -193,26 +202,36 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              searchState.error == '请先添加并启用书源'
+              searchState.error == AppStrings.searchNoSource
                   ? Icons.source_outlined
                   : Icons.search_off,
               size: 64,
-              color: Colors.grey[400],
+              color: c.mutedForeground,
             ),
             const SizedBox(height: 16),
             Text(
               searchState.error!,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.grey[600],
+                color: c.mutedForeground,
                 fontSize: 16,
               ),
             ),
-            if (searchState.error == '请先添加并启用书源') ...[
+            if (searchState.error == AppStrings.searchNoSource) ...[
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: () => context.go('/sources'),
+                onPressed: () => context.push('/sources'),
                 icon: const Icon(Icons.add),
-                label: const Text('添加书源'),
+                label: const Text(AppStrings.searchAddSource),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                AppStrings.searchRetryHint,
+                style: TextStyle(
+                  color: c.mutedForeground,
+                  fontSize: 13,
+                ),
               ),
             ],
           ],
@@ -221,25 +240,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     if (searchState.results.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '输入书名搜索有声书',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 16,
-              ),
-            ),
-          ],
-        ),
+      return const AppEmptyState(
+        icon: Icons.search,
+        title: AppStrings.searchIdleTitle,
+        description: AppStrings.searchIdleHint,
       );
     }
 
@@ -263,11 +267,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           child: ExpansionTile(
             initiallyExpanded: true,
             leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              backgroundColor: c.accent,
               child: Text(
                 source.sourceName.substring(0, 1),
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  color: c.accentForeground,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -276,15 +280,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               source.sourceName,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text('${books.length} 本书'),
-            children: books.map((book) => _buildBookItem(book)).toList(),
+            subtitle: Text('${books.length} ${AppStrings.unitBook}'),
+            children: books.map((book) => _buildBookItem(context, book)).toList(),
           ),
         );
       },
     );
   }
 
-  Widget _buildBookItem(Book book) {
+  Widget _buildBookItem(BuildContext context, Book book) {
+    final c = context.appColors;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: InkWell(
@@ -303,26 +308,17 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         width: 80,
                         height: 100,
                         fit: BoxFit.cover,
-                        placeholder: (context, url) => Container(
-                          width: 80,
-                          height: 100,
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.book),
-                        ),
-                        errorWidget: (context, url, error) => Container(
-                          width: 80,
-                          height: 100,
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.book),
-                        ),
+                        placeholder: (context, url) => _buildCoverFallback(context),
+                        errorWidget: (context, url, error) =>
+                            _buildCoverFallback(context),
                       )
                     : Container(
                         width: 80,
                         height: 100,
-                        color: Theme.of(context).colorScheme.primaryContainer,
+                        color: c.accent,
                         child: Icon(
                           Icons.headphones,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: c.accentForeground,
                         ),
                       ),
               ),
@@ -333,9 +329,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   children: [
                     Text(
                       book.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
+                        color: c.foreground,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -343,17 +340,17 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     const SizedBox(height: 4),
                     if (book.author != null && book.author!.isNotEmpty)
                       Text(
-                        '作者: ${book.author}',
+                        '${AppStrings.bookAuthor}: ${book.author}',
                         style: TextStyle(
-                          color: Colors.grey[600],
+                          color: c.mutedForeground,
                           fontSize: 13,
                         ),
                       ),
                     if (book.narrator != null && book.narrator!.isNotEmpty)
                       Text(
-                        '播音: ${book.narrator}',
+                        '${AppStrings.bookNarrator}: ${book.narrator}',
                         style: TextStyle(
-                          color: Colors.grey[600],
+                          color: c.mutedForeground,
                           fontSize: 13,
                         ),
                       ),
@@ -362,7 +359,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                       Text(
                         book.intro!,
                         style: TextStyle(
-                          color: Colors.grey[500],
+                          color: c.mutedForeground,
                           fontSize: 12,
                         ),
                         maxLines: 2,
@@ -372,7 +369,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right, color: c.mutedForeground),
             ],
           ),
         ),
@@ -380,10 +377,21 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
   }
 
+  /// 封面加载中 / 加载失败时的占位块。
+  Widget _buildCoverFallback(BuildContext context) {
+    final c = context.appColors;
+    return Container(
+      width: 80,
+      height: 100,
+      color: c.muted,
+      child: Icon(Icons.book, color: c.mutedForeground),
+    );
+  }
+
   void _onSearch(String keyword) {
     if (keyword.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入搜索关键词')),
+        const SnackBar(content: Text(AppStrings.searchKeywordEmpty)),
       );
       return;
     }

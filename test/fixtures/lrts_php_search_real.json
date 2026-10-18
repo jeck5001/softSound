@@ -1,0 +1,12 @@
+{
+    "code": 200,
+    "success": true,
+    "message": "搜索成功",
+    "data": {
+        "list": [],
+        "keyword": "凡人"
+    },
+    "used_token": "token6",
+    "used_proxy": "直连",
+    "cost": "0.38s"
+}

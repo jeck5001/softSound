@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/source_rule.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_strings.dart';
 
 /// 书源状态管理
 final sourcesProvider = StateNotifierProvider<SourcesNotifier, List<SourceRule>>((ref) {
@@ -27,6 +29,7 @@ class SourcesNotifier extends StateNotifier<List<SourceRule>> {
       'assets/sources/liuyue.json',
       'assets/sources/xiaoliang.json',
       'assets/sources/xiaoqing.json',
+      'assets/sources/lrts.json',
     ];
     
     for (final file in sourceFiles) {
@@ -91,7 +94,7 @@ class SourceManagerPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('书源管理'),
+        title: const Text(AppStrings.sourceManagerTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
@@ -113,39 +116,44 @@ class SourceManagerPage extends ConsumerWidget {
           Icon(
             Icons.source_outlined,
             size: 80,
-            color: Colors.grey[400],
+            color: context.appColors.mutedForeground,
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无书源',
+            AppStrings.sourceEmptyTitle,
             style: TextStyle(
               fontSize: 18,
-              color: Colors.grey[600],
+              color: context.appColors.mutedForeground,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            '添加书源后即可搜索有声书',
-            style: TextStyle(color: Colors.grey[500]),
+            AppStrings.sourceEmptyHint,
+            style: TextStyle(color: context.appColors.mutedForeground),
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: () => _loadBuiltInSource(context, ref),
             icon: const Icon(Icons.download),
-            label: const Text('加载内置书源'),
+            label: const Text(AppStrings.sourceLoadBuiltIn),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => _showAddSourceDialog(context, ref),
             icon: const Icon(Icons.add),
-            label: const Text('手动添加书源'),
+            label: const Text(AppStrings.sourceAddManual),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSourceList(BuildContext context, WidgetRef ref, List<SourceRule> sources) {
+  Widget _buildSourceList(
+    BuildContext context,
+    WidgetRef ref,
+    List<SourceRule> sources,
+  ) {
+    final c = context.appColors;
     return ListView.builder(
       padding: const EdgeInsets.all(8),
       itemCount: sources.length,
@@ -154,14 +162,10 @@ class SourceManagerPage extends ConsumerWidget {
         return Card(
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: source.enabled
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Colors.grey[300],
+              backgroundColor: source.enabled ? c.accent : c.muted,
               child: Icon(
                 Icons.library_music,
-                color: source.enabled
-                    ? Theme.of(context).colorScheme.onPrimaryContainer
-                    : Colors.grey[600],
+                color: source.enabled ? c.accentForeground : c.mutedForeground,
               ),
             ),
             title: Text(source.sourceName),
@@ -176,19 +180,19 @@ class SourceManagerPage extends ConsumerWidget {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
-                  title: const Text('删除书源'),
-                  content: Text('确定要删除 ${source.sourceName} 吗？'),
+                  title: const Text(AppStrings.sourceDeleteTitle),
+                  content: Text('${AppStrings.sourceDeleteConfirmPrefix}${source.sourceName}${AppStrings.sourceDeleteConfirmSuffix}'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: const Text(AppStrings.cancel),
                     ),
                     FilledButton(
                       onPressed: () {
                         ref.read(sourcesProvider.notifier).removeSource(source.sourceId);
                         Navigator.pop(context);
                       },
-                      child: const Text('删除'),
+                      child: const Text(AppStrings.delete),
                     ),
                   ],
                 ),
@@ -209,13 +213,13 @@ class SourceManagerPage extends ConsumerWidget {
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已添加书源: ${source.sourceName}')),
+          SnackBar(content: Text('${AppStrings.sourceAddSuccessPrefix}${source.sourceName}')),
         );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载书源失败: $e')),
+          SnackBar(content: Text('${AppStrings.sourceLoadFailedPrefix}$e')),
         );
       }
     }
@@ -227,19 +231,19 @@ class SourceManagerPage extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('添加书源'),
+        title: const Text(AppStrings.sourceAddTitle),
         content: TextField(
           controller: controller,
           maxLines: 5,
           decoration: const InputDecoration(
-            hintText: '粘贴书源JSON...',
+            hintText: AppStrings.sourcePasteHint,
             border: OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
@@ -249,15 +253,15 @@ class SourceManagerPage extends ConsumerWidget {
                 ref.read(sourcesProvider.notifier).addSource(source);
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已添加书源: ${source.sourceName}')),
+                  SnackBar(content: Text('${AppStrings.sourceAddSuccessPrefix}${source.sourceName}')),
                 );
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('无效的书源格式: $e')),
+                  SnackBar(content: Text('${AppStrings.sourceInvalidFormatPrefix}$e')),
                 );
               }
             },
-            child: const Text('添加'),
+            child: const Text(AppStrings.sourceAddAction),
           ),
         ],
       ),

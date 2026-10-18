@@ -8,6 +8,7 @@ import 'package:json_path/json_path.dart';
 import 'package:logger/logger.dart';
 
 import '../data/models/source_rule.dart';
+import '../theme/playback_settings.dart';
 import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import 'js_executor.dart';
@@ -227,11 +228,28 @@ class SourceParser {
     }
   }
 
+  /// 获取章节字幕（LRC 文本）。仅 typed 适配器支持；JSON 规则源返回 null。
+  ///
+  /// 契约来源：聆阅字节码 #18026/#18028 —— `kuwo-play` 响应
+  /// `{url, lyric, quality}`，`lyric` 为 LRC 文本。
+  Future<String?> getLyric(SourceRule source, Chapter chapter) async {
+    final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
+    if (typedAdapter == null) return null;
+    return typedAdapter.getLyric(source, chapter);
+  }
+
   /// 获取音频URL
-  Future<String?> getAudioUrl(SourceRule source, Chapter chapter) async {
+  ///
+  /// [quality] 为可选音质偏好，会透传给支持音质选择的适配器
+  /// （如酷我按 br 参数切换码率）；不支持者忽略。
+  Future<String?> getAudioUrl(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async {
     final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
     if (typedAdapter != null) {
-      return typedAdapter.getAudioUrl(source, chapter);
+      return typedAdapter.getAudioUrl(source, chapter, quality: quality);
     }
 
     try {
@@ -393,21 +411,20 @@ class SourceParser {
         }
       }
 
-      print('===== Extracted values: $metaValues');
+      _logger.d('Extracted values: $metaValues');
 
       if (source.audio.apiUrl == null) return null;
       String apiUrl = _buildUrl(source.sourceUrl, source.audio.apiUrl!)!;
       
       String? body = source.audio.apiBody;
-      print('===== Original API Body template: $body');
+      _logger.d('Original API Body template: $body');
       if (body != null) {
         metaValues.forEach((key, value) {
           body = body!.replaceAll('{{$key}}', value);
         });
       }
 
-      print('===== API URL: $apiUrl');
-      print('===== Final API Body: $body');
+      _logger.d('API URL: $apiUrl, body: $body');
 
       final headers = <String, String>{
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -426,7 +443,7 @@ class SourceParser {
         });
       }
 
-      print('===== API Headers: $headers');
+      _logger.d('API Headers: $headers');
 
       final apiResponse = await _request(
         apiUrl,

@@ -6,8 +6,30 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../data/models/book.dart';
 import '../../data/repositories/book_repository.dart';
 import '../../data/repositories/play_history_repository.dart';
+import '../../data/repositories/download_repository.dart';
 import '../source_manager/source_manager_page.dart';
 import '../book_detail/book_detail_page.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_strings.dart';
+import '../../theme/app_widgets.dart';
+
+/// 书架视图模式 —— 对齐聆阅的「网格 / 列表」。
+enum ShelfView { grid, list }
+
+/// 书架排序方式 —— 对齐聆阅的排序项。
+enum ShelfSort {
+  /// 最近加入（数据源默认顺序）
+  recent,
+
+  /// 按书名
+  name,
+}
+
+/// 书架视图模式（会话内状态，不持久化）。
+final shelfViewProvider = StateProvider<ShelfView>((ref) => ShelfView.grid);
+
+/// 书架排序方式。
+final shelfSortProvider = StateProvider<ShelfSort>((ref) => ShelfSort.recent);
 
 /// 书架状态
 class BookshelfState {
@@ -90,16 +112,44 @@ class BookshelfPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookshelfState = ref.watch(bookshelfProvider);
+    final view = ref.watch(shelfViewProvider);
+    final sort = ref.watch(shelfSortProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('我的书架'),
+        title: const Text(AppStrings.myShelf),
         actions: [
-          if (bookshelfState.books.isNotEmpty)
+          if (bookshelfState.books.isNotEmpty) ...[
+            // 视图切换（网格 / 列表）—— 对齐聆阅的「网格/列表」
             IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () => ref.read(bookshelfProvider.notifier).loadBooks(),
+              icon: Icon(
+                view == ShelfView.grid ? Icons.view_list : Icons.grid_view,
+              ),
+              tooltip: view == ShelfView.grid
+                  ? AppStrings.shelfViewList
+                  : AppStrings.shelfViewGrid,
+              onPressed: () => ref.read(shelfViewProvider.notifier).state =
+                  view == ShelfView.grid ? ShelfView.list : ShelfView.grid,
             ),
+            // 排序（聆阅：最新 / 最热）
+            PopupMenuButton<ShelfSort>(
+              icon: const Icon(Icons.sort),
+              tooltip: AppStrings.shelfSort,
+              initialValue: sort,
+              onSelected: (v) =>
+                  ref.read(shelfSortProvider.notifier).state = v,
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: ShelfSort.recent,
+                  child: Text(AppStrings.filterNewest),
+                ),
+                PopupMenuItem(
+                  value: ShelfSort.name,
+                  child: Text(AppStrings.filterHottest),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
       body: _buildBody(context, ref, bookshelfState),
@@ -108,39 +158,73 @@ class BookshelfPage extends ConsumerWidget {
 
   Widget _buildBody(BuildContext context, WidgetRef ref, BookshelfState state) {
     if (state.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingState(message: AppStrings.loadingPlease);
     }
 
     if (state.books.isEmpty) {
       return _buildEmptyState(context);
     }
 
+    final books = _sorted(state.books, ref.watch(shelfSortProvider));
+    final view = ref.watch(shelfViewProvider);
+
     return RefreshIndicator(
       onRefresh: () => ref.read(bookshelfProvider.notifier).loadBooks(),
-      child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          childAspectRatio: 0.55,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 16,
-        ),
-        itemCount: state.books.length,
-        itemBuilder: (context, index) {
-          final book = state.books[index];
-          final progress = state.progressMap[book.bookId];
-          return _buildBookItem(context, ref, book, progress);
-        },
-      ),
+      child: view == ShelfView.grid
+          ? GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 0.55,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 16,
+              ),
+              itemCount: books.length,
+              itemBuilder: (context, index) {
+                final book = books[index];
+                return _buildBookItem(
+                  context,
+                  ref,
+                  book,
+                  state.progressMap[book.bookId],
+                );
+              },
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: books.length,
+              itemBuilder: (context, index) {
+                final book = books[index];
+                return _buildBookRow(
+                  context,
+                  ref,
+                  book,
+                  state.progressMap[book.bookId],
+                );
+              },
+            ),
     );
   }
 
+  /// 按所选排序返回书籍列表。
+  List<Book> _sorted(List<Book> books, ShelfSort sort) {
+    final copy = [...books];
+    switch (sort) {
+      case ShelfSort.name:
+        copy.sort((a, b) => a.name.compareTo(b.name));
+      case ShelfSort.recent:
+        // 保持数据源顺序（仓库已按加入/更新时间倒序返回）
+        break;
+    }
+    return copy;
+  }
   Widget _buildBookItem(
     BuildContext context,
     WidgetRef ref,
     Book book,
     PlayProgress? progress,
   ) {
+    final c = context.appColors;
     return GestureDetector(
       onTap: () => _openBook(context, ref, book),
       onLongPress: () => _showDeleteDialog(context, ref, book),
@@ -158,10 +242,12 @@ class BookshelfPage extends ConsumerWidget {
                           fit: BoxFit.cover,
                           width: double.infinity,
                           height: double.infinity,
-                          placeholder: (context, url) => _buildDefaultCover(),
-                          errorWidget: (context, url, error) => _buildDefaultCover(),
+                          placeholder: (context, url) =>
+                              _buildDefaultCover(context),
+                          errorWidget: (context, url, error) =>
+                              _buildDefaultCover(context),
                         )
-                      : _buildDefaultCover(),
+                      : _buildDefaultCover(context),
                 ),
                 if (progress != null)
                   Positioned(
@@ -171,7 +257,7 @@ class BookshelfPage extends ConsumerWidget {
                     child: Container(
                       height: 3,
                       decoration: BoxDecoration(
-                        color: Colors.grey[300],
+                        color: c.border,
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(8),
                           bottomRight: Radius.circular(8),
@@ -182,7 +268,7 @@ class BookshelfPage extends ConsumerWidget {
                         widthFactor: progress.progress,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primary,
+                            color: c.primary,
                             borderRadius: const BorderRadius.only(
                               bottomLeft: Radius.circular(8),
                               bottomRight: Radius.circular(8),
@@ -200,19 +286,23 @@ class BookshelfPage extends ConsumerWidget {
             book.name,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
+              color: c.foreground,
             ),
           ),
           if (progress != null)
             Text(
-              progress.chapterName ?? '第${progress.chapterIndex + 1}章',
+              progress.chapterName ??
+                  '${AppStrings.chapterIndexPrefix}'
+                      '${progress.chapterIndex + 1}'
+                      '${AppStrings.chapterIndexSuffix}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.grey[600],
+                color: c.mutedForeground,
               ),
             ),
         ],
@@ -220,52 +310,124 @@ class BookshelfPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildDefaultCover() {
+  Widget _buildDefaultCover(BuildContext context) {
+    final c = context.appColors;
     return Container(
       width: double.infinity,
       height: double.infinity,
-      color: Colors.grey[200],
+      color: c.muted,
       child: Icon(
         Icons.headphones,
         size: 40,
-        color: Colors.grey[400],
+        color: c.mutedForeground,
+      ),
+    );
+  }
+
+  /// 列表视图的书籍行 —— 对齐聆阅的列表模式。
+  ///
+  /// 相比网格多显示作者/播音与收听进度文本，并带「已离线」标记。
+  Widget _buildBookRow(
+    BuildContext context,
+    WidgetRef ref,
+    Book book,
+    PlayProgress? progress,
+  ) {
+    final c = context.appColors;
+    return InkWell(
+      onTap: () => _openBook(context, ref, book),
+      onLongPress: () => _showDeleteDialog(context, ref, book),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 56,
+                height: 74,
+                child: book.coverUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: book.coverUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) =>
+                            _buildDefaultCover(context),
+                        errorWidget: (context, url, error) =>
+                            _buildDefaultCover(context),
+                      )
+                    : _buildDefaultCover(context),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    book.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: c.foreground,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      if (book.author != null && book.author!.isNotEmpty)
+                        book.author!,
+                      if (book.narrator != null && book.narrator!.isNotEmpty)
+                        '${AppStrings.bookNarratorPrefix}${book.narrator}',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: c.mutedForeground),
+                  ),
+                  if (progress != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${AppStrings.listenedAlready}'
+                      '${progress.chapterName ?? AppStrings.episodeIndex(progress.chapterIndex + 1)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: c.primary),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // 离线缓存标记：该书是否有已下载章节
+            if (ref.watch(bookHasDownloadProvider(book.bookId)).valueOrNull ??
+                false)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.accent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  AppStrings.offlineReady,
+                  style: TextStyle(fontSize: 10, color: c.accentForeground),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.library_books_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '书架空空如也',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '快去搜索添加喜欢的有声书吧',
-            style: TextStyle(
-              color: Colors.grey[500],
-            ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: () => context.push('/search'),
-            icon: const Icon(Icons.search),
-            label: const Text('去搜索'),
-          ),
-        ],
-      ),
+    return AppEmptyState(
+      icon: Icons.library_books_outlined,
+      title: AppStrings.shelfEmpty,
+      description: AppStrings.shelfEmptyHint,
+      actionLabel: AppStrings.shelfExplore,
+      onAction: () => context.push('/search'),
     );
   }
 
@@ -283,22 +445,32 @@ class BookshelfPage extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('移出书架'),
-        content: Text('确定要将「${book.name}」移出书架吗？'),
+        title: const Text(AppStrings.removeFromShelfTitle),
+        content: Text(
+          '${AppStrings.removeFromShelfConfirmPrefix}'
+          '${book.name}'
+          '${AppStrings.removeFromShelfConfirmSuffix}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               ref.read(bookshelfProvider.notifier).removeBook(book.bookId);
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已将「${book.name}」移出书架')),
+                SnackBar(
+                  content: Text(
+                    '${AppStrings.removedFromShelfPrefix}'
+                    '${book.name}'
+                    '${AppStrings.removedFromShelfSuffix}',
+                  ),
+                ),
               );
             },
-            child: const Text('移出'),
+            child: const Text(AppStrings.moveOut),
           ),
         ],
       ),

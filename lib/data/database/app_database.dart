@@ -7,16 +7,26 @@ import 'package:path/path.dart' as p;
 
 import 'tables/books_table.dart';
 import 'tables/play_history_table.dart';
+import 'tables/download_chapters_table.dart';
+import 'tables/listening_stats_table.dart';
 
 part 'app_database.g.dart';
 
 /// 应用数据库
-@DriftDatabase(tables: [BooksTable, PlayHistoryTable])
+@DriftDatabase(tables: [
+  BooksTable,
+  PlayHistoryTable,
+  DownloadChaptersTable,
+  ListeningStatsTable,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// 供测试注入执行器（如内存数据库）。
+  AppDatabase.forTesting(super.executor);
+
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -25,6 +35,14 @@ class AppDatabase extends _$AppDatabase {
         await m.createAll();
       },
       onUpgrade: (Migrator m, int from, int to) async {
+        // v1 -> v2：新增下载章节表（离线缓存）。
+        if (from < 2) {
+          await m.createTable(downloadChaptersTable);
+        }
+        // v2 -> v3：新增累计收听统计表。
+        if (from < 3) {
+          await m.createTable(listeningStatsTable);
+        }
       },
     );
   }

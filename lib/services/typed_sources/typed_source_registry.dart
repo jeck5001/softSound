@@ -1,5 +1,6 @@
 import 'typed_source_adapter.dart';
 import 'liuyue_source_adapter.dart';
+import 'lrts_source_adapter.dart';
 import 'xa_source_adapter.dart';
 import 'xiaoku_source_adapter.dart';
 import 'xiaoliang_source_adapter.dart';
@@ -22,4 +23,6 @@ final typedSourceRegistry = TypedSourceRegistry([
   LiuYueSourceAdapter(),
   XiaoLiangSourceAdapter(),
   XiaoQingSourceAdapter(),
+  // 懒人听书：依据 2026-10-13 对 m.lrts.me 的真实请求新增
+  LrtsSourceAdapter(),
 ]);

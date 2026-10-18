@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动器图标自适应底色（与 App 主色 brand purple #6D28D9 一致） -->
+    <color name="ic_launcher_background">#6D28D9</color>
+</resources>

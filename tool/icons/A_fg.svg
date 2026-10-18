@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- 自适应图标前景：整组缩放进 108dp 画布的中心 66% 安全区 -->
+  <g transform="translate(512,512) scale(0.74) translate(-512,-488)">
+    <rect x="150" y="800" width="240" height="26" rx="13" fill="#EF4444"/>
+    <rect x="410" y="800" width="90" height="26" rx="13" fill="#14B8A6"/>
+    <text x="538" y="668" font-family="PingFang SC, Hiragino Sans GB, Heiti SC, sans-serif" font-size="620" font-weight="700" text-anchor="middle" fill="#1C1917">听</text>
+    <text x="512" y="642" font-family="PingFang SC, Hiragino Sans GB, Heiti SC, sans-serif" font-size="620" font-weight="700" text-anchor="middle" fill="#FFFFFF">听</text>
+  </g>
+</svg>

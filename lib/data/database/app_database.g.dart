@@ -1321,6 +1321,1109 @@ class PlayHistoryTableCompanion extends UpdateCompanion<PlayHistoryTableData> {
   }
 }
 
+class $DownloadChaptersTableTable extends DownloadChaptersTable
+    with TableInfo<$DownloadChaptersTableTable, DownloadChaptersTableData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DownloadChaptersTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _bookIdMeta = const VerificationMeta('bookId');
+  @override
+  late final GeneratedColumn<String> bookId = GeneratedColumn<String>(
+    'book_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chapterIndexMeta = const VerificationMeta(
+    'chapterIndex',
+  );
+  @override
+  late final GeneratedColumn<int> chapterIndex = GeneratedColumn<int>(
+    'chapter_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chapterNameMeta = const VerificationMeta(
+    'chapterName',
+  );
+  @override
+  late final GeneratedColumn<String> chapterName = GeneratedColumn<String>(
+    'chapter_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteUrlMeta = const VerificationMeta(
+    'remoteUrl',
+  );
+  @override
+  late final GeneratedColumn<String> remoteUrl = GeneratedColumn<String>(
+    'remote_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _localPathMeta = const VerificationMeta(
+    'localPath',
+  );
+  @override
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+    'local_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _downloadedBytesMeta = const VerificationMeta(
+    'downloadedBytes',
+  );
+  @override
+  late final GeneratedColumn<int> downloadedBytes = GeneratedColumn<int>(
+    'downloaded_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _totalBytesMeta = const VerificationMeta(
+    'totalBytes',
+  );
+  @override
+  late final GeneratedColumn<int> totalBytes = GeneratedColumn<int>(
+    'total_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DownloadStatus, int> status =
+      GeneratedColumn<int>(
+        'status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: Constant(DownloadStatus.queued.index),
+      ).withConverter<DownloadStatus>(
+        $DownloadChaptersTableTable.$converterstatus,
+      );
+  static const VerificationMeta _errorMeta = const VerificationMeta('error');
+  @override
+  late final GeneratedColumn<String> error = GeneratedColumn<String>(
+    'error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    bookId,
+    sourceId,
+    chapterIndex,
+    chapterName,
+    remoteUrl,
+    localPath,
+    downloadedBytes,
+    totalBytes,
+    status,
+    error,
+    durationMs,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'download_chapters';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DownloadChaptersTableData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_id')) {
+      context.handle(
+        _bookIdMeta,
+        bookId.isAcceptableOrUnknown(data['book_id']!, _bookIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookIdMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('chapter_index')) {
+      context.handle(
+        _chapterIndexMeta,
+        chapterIndex.isAcceptableOrUnknown(
+          data['chapter_index']!,
+          _chapterIndexMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chapterIndexMeta);
+    }
+    if (data.containsKey('chapter_name')) {
+      context.handle(
+        _chapterNameMeta,
+        chapterName.isAcceptableOrUnknown(
+          data['chapter_name']!,
+          _chapterNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chapterNameMeta);
+    }
+    if (data.containsKey('remote_url')) {
+      context.handle(
+        _remoteUrlMeta,
+        remoteUrl.isAcceptableOrUnknown(data['remote_url']!, _remoteUrlMeta),
+      );
+    }
+    if (data.containsKey('local_path')) {
+      context.handle(
+        _localPathMeta,
+        localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta),
+      );
+    }
+    if (data.containsKey('downloaded_bytes')) {
+      context.handle(
+        _downloadedBytesMeta,
+        downloadedBytes.isAcceptableOrUnknown(
+          data['downloaded_bytes']!,
+          _downloadedBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('total_bytes')) {
+      context.handle(
+        _totalBytesMeta,
+        totalBytes.isAcceptableOrUnknown(data['total_bytes']!, _totalBytesMeta),
+      );
+    }
+    if (data.containsKey('error')) {
+      context.handle(
+        _errorMeta,
+        error.isAcceptableOrUnknown(data['error']!, _errorMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {bookId, chapterIndex},
+  ];
+  @override
+  DownloadChaptersTableData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DownloadChaptersTableData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      bookId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_id'],
+      )!,
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      )!,
+      chapterIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}chapter_index'],
+      )!,
+      chapterName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_name'],
+      )!,
+      remoteUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_url'],
+      ),
+      localPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_path'],
+      ),
+      downloadedBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}downloaded_bytes'],
+      )!,
+      totalBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_bytes'],
+      )!,
+      status: $DownloadChaptersTableTable.$converterstatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}status'],
+        )!,
+      ),
+      error: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error'],
+      ),
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DownloadChaptersTableTable createAlias(String alias) {
+    return $DownloadChaptersTableTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<DownloadStatus, int, int> $converterstatus =
+      const EnumIndexConverter<DownloadStatus>(DownloadStatus.values);
+}
+
+class DownloadChaptersTableData extends DataClass
+    implements Insertable<DownloadChaptersTableData> {
+  final int id;
+
+  /// 所属书籍 ID（与 BooksTable.bookId 对应）。
+  final String bookId;
+
+  /// 书源 ID，便于按源清理。
+  final String sourceId;
+
+  /// 章节序号（与 Chapter 列表顺序一致）。
+  final int chapterIndex;
+
+  /// 章节名，用于列表展示。
+  final String chapterName;
+
+  /// 远端音频地址（缓存来源）。
+  final String? remoteUrl;
+
+  /// 本地文件路径；完成后才有值。
+  final String? localPath;
+
+  /// 已下载字节数，用于进度展示。
+  final int downloadedBytes;
+
+  /// 文件总字节数；未知时为 0。
+  final int totalBytes;
+
+  /// 下载状态（存 [DownloadStatus] 的 index）。
+  final DownloadStatus status;
+
+  /// 失败原因。
+  final String? error;
+
+  /// 音频时长（毫秒），用于展示与空间统计。
+  final int durationMs;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const DownloadChaptersTableData({
+    required this.id,
+    required this.bookId,
+    required this.sourceId,
+    required this.chapterIndex,
+    required this.chapterName,
+    this.remoteUrl,
+    this.localPath,
+    required this.downloadedBytes,
+    required this.totalBytes,
+    required this.status,
+    this.error,
+    required this.durationMs,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_id'] = Variable<String>(bookId);
+    map['source_id'] = Variable<String>(sourceId);
+    map['chapter_index'] = Variable<int>(chapterIndex);
+    map['chapter_name'] = Variable<String>(chapterName);
+    if (!nullToAbsent || remoteUrl != null) {
+      map['remote_url'] = Variable<String>(remoteUrl);
+    }
+    if (!nullToAbsent || localPath != null) {
+      map['local_path'] = Variable<String>(localPath);
+    }
+    map['downloaded_bytes'] = Variable<int>(downloadedBytes);
+    map['total_bytes'] = Variable<int>(totalBytes);
+    {
+      map['status'] = Variable<int>(
+        $DownloadChaptersTableTable.$converterstatus.toSql(status),
+      );
+    }
+    if (!nullToAbsent || error != null) {
+      map['error'] = Variable<String>(error);
+    }
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  DownloadChaptersTableCompanion toCompanion(bool nullToAbsent) {
+    return DownloadChaptersTableCompanion(
+      id: Value(id),
+      bookId: Value(bookId),
+      sourceId: Value(sourceId),
+      chapterIndex: Value(chapterIndex),
+      chapterName: Value(chapterName),
+      remoteUrl: remoteUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(remoteUrl),
+      localPath: localPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPath),
+      downloadedBytes: Value(downloadedBytes),
+      totalBytes: Value(totalBytes),
+      status: Value(status),
+      error: error == null && nullToAbsent
+          ? const Value.absent()
+          : Value(error),
+      durationMs: Value(durationMs),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory DownloadChaptersTableData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DownloadChaptersTableData(
+      id: serializer.fromJson<int>(json['id']),
+      bookId: serializer.fromJson<String>(json['bookId']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      chapterIndex: serializer.fromJson<int>(json['chapterIndex']),
+      chapterName: serializer.fromJson<String>(json['chapterName']),
+      remoteUrl: serializer.fromJson<String?>(json['remoteUrl']),
+      localPath: serializer.fromJson<String?>(json['localPath']),
+      downloadedBytes: serializer.fromJson<int>(json['downloadedBytes']),
+      totalBytes: serializer.fromJson<int>(json['totalBytes']),
+      status: $DownloadChaptersTableTable.$converterstatus.fromJson(
+        serializer.fromJson<int>(json['status']),
+      ),
+      error: serializer.fromJson<String?>(json['error']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookId': serializer.toJson<String>(bookId),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'chapterIndex': serializer.toJson<int>(chapterIndex),
+      'chapterName': serializer.toJson<String>(chapterName),
+      'remoteUrl': serializer.toJson<String?>(remoteUrl),
+      'localPath': serializer.toJson<String?>(localPath),
+      'downloadedBytes': serializer.toJson<int>(downloadedBytes),
+      'totalBytes': serializer.toJson<int>(totalBytes),
+      'status': serializer.toJson<int>(
+        $DownloadChaptersTableTable.$converterstatus.toJson(status),
+      ),
+      'error': serializer.toJson<String?>(error),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  DownloadChaptersTableData copyWith({
+    int? id,
+    String? bookId,
+    String? sourceId,
+    int? chapterIndex,
+    String? chapterName,
+    Value<String?> remoteUrl = const Value.absent(),
+    Value<String?> localPath = const Value.absent(),
+    int? downloadedBytes,
+    int? totalBytes,
+    DownloadStatus? status,
+    Value<String?> error = const Value.absent(),
+    int? durationMs,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => DownloadChaptersTableData(
+    id: id ?? this.id,
+    bookId: bookId ?? this.bookId,
+    sourceId: sourceId ?? this.sourceId,
+    chapterIndex: chapterIndex ?? this.chapterIndex,
+    chapterName: chapterName ?? this.chapterName,
+    remoteUrl: remoteUrl.present ? remoteUrl.value : this.remoteUrl,
+    localPath: localPath.present ? localPath.value : this.localPath,
+    downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+    totalBytes: totalBytes ?? this.totalBytes,
+    status: status ?? this.status,
+    error: error.present ? error.value : this.error,
+    durationMs: durationMs ?? this.durationMs,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  DownloadChaptersTableData copyWithCompanion(
+    DownloadChaptersTableCompanion data,
+  ) {
+    return DownloadChaptersTableData(
+      id: data.id.present ? data.id.value : this.id,
+      bookId: data.bookId.present ? data.bookId.value : this.bookId,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      chapterIndex: data.chapterIndex.present
+          ? data.chapterIndex.value
+          : this.chapterIndex,
+      chapterName: data.chapterName.present
+          ? data.chapterName.value
+          : this.chapterName,
+      remoteUrl: data.remoteUrl.present ? data.remoteUrl.value : this.remoteUrl,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
+      downloadedBytes: data.downloadedBytes.present
+          ? data.downloadedBytes.value
+          : this.downloadedBytes,
+      totalBytes: data.totalBytes.present
+          ? data.totalBytes.value
+          : this.totalBytes,
+      status: data.status.present ? data.status.value : this.status,
+      error: data.error.present ? data.error.value : this.error,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DownloadChaptersTableData(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('chapterIndex: $chapterIndex, ')
+          ..write('chapterName: $chapterName, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('localPath: $localPath, ')
+          ..write('downloadedBytes: $downloadedBytes, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('status: $status, ')
+          ..write('error: $error, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    bookId,
+    sourceId,
+    chapterIndex,
+    chapterName,
+    remoteUrl,
+    localPath,
+    downloadedBytes,
+    totalBytes,
+    status,
+    error,
+    durationMs,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DownloadChaptersTableData &&
+          other.id == this.id &&
+          other.bookId == this.bookId &&
+          other.sourceId == this.sourceId &&
+          other.chapterIndex == this.chapterIndex &&
+          other.chapterName == this.chapterName &&
+          other.remoteUrl == this.remoteUrl &&
+          other.localPath == this.localPath &&
+          other.downloadedBytes == this.downloadedBytes &&
+          other.totalBytes == this.totalBytes &&
+          other.status == this.status &&
+          other.error == this.error &&
+          other.durationMs == this.durationMs &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class DownloadChaptersTableCompanion
+    extends UpdateCompanion<DownloadChaptersTableData> {
+  final Value<int> id;
+  final Value<String> bookId;
+  final Value<String> sourceId;
+  final Value<int> chapterIndex;
+  final Value<String> chapterName;
+  final Value<String?> remoteUrl;
+  final Value<String?> localPath;
+  final Value<int> downloadedBytes;
+  final Value<int> totalBytes;
+  final Value<DownloadStatus> status;
+  final Value<String?> error;
+  final Value<int> durationMs;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  const DownloadChaptersTableCompanion({
+    this.id = const Value.absent(),
+    this.bookId = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.chapterIndex = const Value.absent(),
+    this.chapterName = const Value.absent(),
+    this.remoteUrl = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.downloadedBytes = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.status = const Value.absent(),
+    this.error = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  DownloadChaptersTableCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookId,
+    required String sourceId,
+    required int chapterIndex,
+    required String chapterName,
+    this.remoteUrl = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.downloadedBytes = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.status = const Value.absent(),
+    this.error = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : bookId = Value(bookId),
+       sourceId = Value(sourceId),
+       chapterIndex = Value(chapterIndex),
+       chapterName = Value(chapterName);
+  static Insertable<DownloadChaptersTableData> custom({
+    Expression<int>? id,
+    Expression<String>? bookId,
+    Expression<String>? sourceId,
+    Expression<int>? chapterIndex,
+    Expression<String>? chapterName,
+    Expression<String>? remoteUrl,
+    Expression<String>? localPath,
+    Expression<int>? downloadedBytes,
+    Expression<int>? totalBytes,
+    Expression<int>? status,
+    Expression<String>? error,
+    Expression<int>? durationMs,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookId != null) 'book_id': bookId,
+      if (sourceId != null) 'source_id': sourceId,
+      if (chapterIndex != null) 'chapter_index': chapterIndex,
+      if (chapterName != null) 'chapter_name': chapterName,
+      if (remoteUrl != null) 'remote_url': remoteUrl,
+      if (localPath != null) 'local_path': localPath,
+      if (downloadedBytes != null) 'downloaded_bytes': downloadedBytes,
+      if (totalBytes != null) 'total_bytes': totalBytes,
+      if (status != null) 'status': status,
+      if (error != null) 'error': error,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  DownloadChaptersTableCompanion copyWith({
+    Value<int>? id,
+    Value<String>? bookId,
+    Value<String>? sourceId,
+    Value<int>? chapterIndex,
+    Value<String>? chapterName,
+    Value<String?>? remoteUrl,
+    Value<String?>? localPath,
+    Value<int>? downloadedBytes,
+    Value<int>? totalBytes,
+    Value<DownloadStatus>? status,
+    Value<String?>? error,
+    Value<int>? durationMs,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+  }) {
+    return DownloadChaptersTableCompanion(
+      id: id ?? this.id,
+      bookId: bookId ?? this.bookId,
+      sourceId: sourceId ?? this.sourceId,
+      chapterIndex: chapterIndex ?? this.chapterIndex,
+      chapterName: chapterName ?? this.chapterName,
+      remoteUrl: remoteUrl ?? this.remoteUrl,
+      localPath: localPath ?? this.localPath,
+      downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      totalBytes: totalBytes ?? this.totalBytes,
+      status: status ?? this.status,
+      error: error ?? this.error,
+      durationMs: durationMs ?? this.durationMs,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookId.present) {
+      map['book_id'] = Variable<String>(bookId.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (chapterIndex.present) {
+      map['chapter_index'] = Variable<int>(chapterIndex.value);
+    }
+    if (chapterName.present) {
+      map['chapter_name'] = Variable<String>(chapterName.value);
+    }
+    if (remoteUrl.present) {
+      map['remote_url'] = Variable<String>(remoteUrl.value);
+    }
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
+    }
+    if (downloadedBytes.present) {
+      map['downloaded_bytes'] = Variable<int>(downloadedBytes.value);
+    }
+    if (totalBytes.present) {
+      map['total_bytes'] = Variable<int>(totalBytes.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<int>(
+        $DownloadChaptersTableTable.$converterstatus.toSql(status.value),
+      );
+    }
+    if (error.present) {
+      map['error'] = Variable<String>(error.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DownloadChaptersTableCompanion(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('chapterIndex: $chapterIndex, ')
+          ..write('chapterName: $chapterName, ')
+          ..write('remoteUrl: $remoteUrl, ')
+          ..write('localPath: $localPath, ')
+          ..write('downloadedBytes: $downloadedBytes, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('status: $status, ')
+          ..write('error: $error, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ListeningStatsTableTable extends ListeningStatsTable
+    with TableInfo<$ListeningStatsTableTable, ListeningStatsTableData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ListeningStatsTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _totalSecondsMeta = const VerificationMeta(
+    'totalSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> totalSeconds = GeneratedColumn<int>(
+    'total_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, totalSeconds, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'listening_stats';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ListeningStatsTableData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('total_seconds')) {
+      context.handle(
+        _totalSecondsMeta,
+        totalSeconds.isAcceptableOrUnknown(
+          data['total_seconds']!,
+          _totalSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ListeningStatsTableData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ListeningStatsTableData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      totalSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}total_seconds'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ListeningStatsTableTable createAlias(String alias) {
+    return $ListeningStatsTableTable(attachedDatabase, alias);
+  }
+}
+
+class ListeningStatsTableData extends DataClass
+    implements Insertable<ListeningStatsTableData> {
+  final int id;
+
+  /// 累计收听秒数（只增不减，除非用户主动清空统计）。
+  final int totalSeconds;
+
+  /// 最近一次累计时间。
+  final DateTime updatedAt;
+  const ListeningStatsTableData({
+    required this.id,
+    required this.totalSeconds,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['total_seconds'] = Variable<int>(totalSeconds);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  ListeningStatsTableCompanion toCompanion(bool nullToAbsent) {
+    return ListeningStatsTableCompanion(
+      id: Value(id),
+      totalSeconds: Value(totalSeconds),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ListeningStatsTableData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ListeningStatsTableData(
+      id: serializer.fromJson<int>(json['id']),
+      totalSeconds: serializer.fromJson<int>(json['totalSeconds']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'totalSeconds': serializer.toJson<int>(totalSeconds),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  ListeningStatsTableData copyWith({
+    int? id,
+    int? totalSeconds,
+    DateTime? updatedAt,
+  }) => ListeningStatsTableData(
+    id: id ?? this.id,
+    totalSeconds: totalSeconds ?? this.totalSeconds,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  ListeningStatsTableData copyWithCompanion(ListeningStatsTableCompanion data) {
+    return ListeningStatsTableData(
+      id: data.id.present ? data.id.value : this.id,
+      totalSeconds: data.totalSeconds.present
+          ? data.totalSeconds.value
+          : this.totalSeconds,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ListeningStatsTableData(')
+          ..write('id: $id, ')
+          ..write('totalSeconds: $totalSeconds, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, totalSeconds, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ListeningStatsTableData &&
+          other.id == this.id &&
+          other.totalSeconds == this.totalSeconds &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ListeningStatsTableCompanion
+    extends UpdateCompanion<ListeningStatsTableData> {
+  final Value<int> id;
+  final Value<int> totalSeconds;
+  final Value<DateTime> updatedAt;
+  const ListeningStatsTableCompanion({
+    this.id = const Value.absent(),
+    this.totalSeconds = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  ListeningStatsTableCompanion.insert({
+    this.id = const Value.absent(),
+    this.totalSeconds = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  static Insertable<ListeningStatsTableData> custom({
+    Expression<int>? id,
+    Expression<int>? totalSeconds,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (totalSeconds != null) 'total_seconds': totalSeconds,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  ListeningStatsTableCompanion copyWith({
+    Value<int>? id,
+    Value<int>? totalSeconds,
+    Value<DateTime>? updatedAt,
+  }) {
+    return ListeningStatsTableCompanion(
+      id: id ?? this.id,
+      totalSeconds: totalSeconds ?? this.totalSeconds,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (totalSeconds.present) {
+      map['total_seconds'] = Variable<int>(totalSeconds.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ListeningStatsTableCompanion(')
+          ..write('id: $id, ')
+          ..write('totalSeconds: $totalSeconds, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1328,6 +2431,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlayHistoryTableTable playHistoryTable = $PlayHistoryTableTable(
     this,
   );
+  late final $DownloadChaptersTableTable downloadChaptersTable =
+      $DownloadChaptersTableTable(this);
+  late final $ListeningStatsTableTable listeningStatsTable =
+      $ListeningStatsTableTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1335,6 +2442,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     booksTable,
     playHistoryTable,
+    downloadChaptersTable,
+    listeningStatsTable,
   ];
 }
 
@@ -1978,6 +3087,575 @@ typedef $$PlayHistoryTableTableProcessedTableManager =
       PlayHistoryTableData,
       PrefetchHooks Function()
     >;
+typedef $$DownloadChaptersTableTableCreateCompanionBuilder =
+    DownloadChaptersTableCompanion Function({
+      Value<int> id,
+      required String bookId,
+      required String sourceId,
+      required int chapterIndex,
+      required String chapterName,
+      Value<String?> remoteUrl,
+      Value<String?> localPath,
+      Value<int> downloadedBytes,
+      Value<int> totalBytes,
+      Value<DownloadStatus> status,
+      Value<String?> error,
+      Value<int> durationMs,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+    });
+typedef $$DownloadChaptersTableTableUpdateCompanionBuilder =
+    DownloadChaptersTableCompanion Function({
+      Value<int> id,
+      Value<String> bookId,
+      Value<String> sourceId,
+      Value<int> chapterIndex,
+      Value<String> chapterName,
+      Value<String?> remoteUrl,
+      Value<String?> localPath,
+      Value<int> downloadedBytes,
+      Value<int> totalBytes,
+      Value<DownloadStatus> status,
+      Value<String?> error,
+      Value<int> durationMs,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+    });
+
+class $$DownloadChaptersTableTableFilterComposer
+    extends Composer<_$AppDatabase, $DownloadChaptersTableTable> {
+  $$DownloadChaptersTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookId => $composableBuilder(
+    column: $table.bookId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get chapterIndex => $composableBuilder(
+    column: $table.chapterIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterName => $composableBuilder(
+    column: $table.chapterName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteUrl => $composableBuilder(
+    column: $table.remoteUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get downloadedBytes => $composableBuilder(
+    column: $table.downloadedBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalBytes => $composableBuilder(
+    column: $table.totalBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DownloadStatus, DownloadStatus, int>
+  get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DownloadChaptersTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $DownloadChaptersTableTable> {
+  $$DownloadChaptersTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bookId => $composableBuilder(
+    column: $table.bookId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get chapterIndex => $composableBuilder(
+    column: $table.chapterIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterName => $composableBuilder(
+    column: $table.chapterName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteUrl => $composableBuilder(
+    column: $table.remoteUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get downloadedBytes => $composableBuilder(
+    column: $table.downloadedBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalBytes => $composableBuilder(
+    column: $table.totalBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DownloadChaptersTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DownloadChaptersTableTable> {
+  $$DownloadChaptersTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookId =>
+      $composableBuilder(column: $table.bookId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<int> get chapterIndex => $composableBuilder(
+    column: $table.chapterIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get chapterName => $composableBuilder(
+    column: $table.chapterName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteUrl =>
+      $composableBuilder(column: $table.remoteUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
+
+  GeneratedColumn<int> get downloadedBytes => $composableBuilder(
+    column: $table.downloadedBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get totalBytes => $composableBuilder(
+    column: $table.totalBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DownloadStatus, int> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get error =>
+      $composableBuilder(column: $table.error, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$DownloadChaptersTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DownloadChaptersTableTable,
+          DownloadChaptersTableData,
+          $$DownloadChaptersTableTableFilterComposer,
+          $$DownloadChaptersTableTableOrderingComposer,
+          $$DownloadChaptersTableTableAnnotationComposer,
+          $$DownloadChaptersTableTableCreateCompanionBuilder,
+          $$DownloadChaptersTableTableUpdateCompanionBuilder,
+          (
+            DownloadChaptersTableData,
+            BaseReferences<
+              _$AppDatabase,
+              $DownloadChaptersTableTable,
+              DownloadChaptersTableData
+            >,
+          ),
+          DownloadChaptersTableData,
+          PrefetchHooks Function()
+        > {
+  $$DownloadChaptersTableTableTableManager(
+    _$AppDatabase db,
+    $DownloadChaptersTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DownloadChaptersTableTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$DownloadChaptersTableTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$DownloadChaptersTableTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> bookId = const Value.absent(),
+                Value<String> sourceId = const Value.absent(),
+                Value<int> chapterIndex = const Value.absent(),
+                Value<String> chapterName = const Value.absent(),
+                Value<String?> remoteUrl = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                Value<int> downloadedBytes = const Value.absent(),
+                Value<int> totalBytes = const Value.absent(),
+                Value<DownloadStatus> status = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => DownloadChaptersTableCompanion(
+                id: id,
+                bookId: bookId,
+                sourceId: sourceId,
+                chapterIndex: chapterIndex,
+                chapterName: chapterName,
+                remoteUrl: remoteUrl,
+                localPath: localPath,
+                downloadedBytes: downloadedBytes,
+                totalBytes: totalBytes,
+                status: status,
+                error: error,
+                durationMs: durationMs,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String bookId,
+                required String sourceId,
+                required int chapterIndex,
+                required String chapterName,
+                Value<String?> remoteUrl = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                Value<int> downloadedBytes = const Value.absent(),
+                Value<int> totalBytes = const Value.absent(),
+                Value<DownloadStatus> status = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => DownloadChaptersTableCompanion.insert(
+                id: id,
+                bookId: bookId,
+                sourceId: sourceId,
+                chapterIndex: chapterIndex,
+                chapterName: chapterName,
+                remoteUrl: remoteUrl,
+                localPath: localPath,
+                downloadedBytes: downloadedBytes,
+                totalBytes: totalBytes,
+                status: status,
+                error: error,
+                durationMs: durationMs,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DownloadChaptersTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DownloadChaptersTableTable,
+      DownloadChaptersTableData,
+      $$DownloadChaptersTableTableFilterComposer,
+      $$DownloadChaptersTableTableOrderingComposer,
+      $$DownloadChaptersTableTableAnnotationComposer,
+      $$DownloadChaptersTableTableCreateCompanionBuilder,
+      $$DownloadChaptersTableTableUpdateCompanionBuilder,
+      (
+        DownloadChaptersTableData,
+        BaseReferences<
+          _$AppDatabase,
+          $DownloadChaptersTableTable,
+          DownloadChaptersTableData
+        >,
+      ),
+      DownloadChaptersTableData,
+      PrefetchHooks Function()
+    >;
+typedef $$ListeningStatsTableTableCreateCompanionBuilder =
+    ListeningStatsTableCompanion Function({
+      Value<int> id,
+      Value<int> totalSeconds,
+      Value<DateTime> updatedAt,
+    });
+typedef $$ListeningStatsTableTableUpdateCompanionBuilder =
+    ListeningStatsTableCompanion Function({
+      Value<int> id,
+      Value<int> totalSeconds,
+      Value<DateTime> updatedAt,
+    });
+
+class $$ListeningStatsTableTableFilterComposer
+    extends Composer<_$AppDatabase, $ListeningStatsTableTable> {
+  $$ListeningStatsTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get totalSeconds => $composableBuilder(
+    column: $table.totalSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ListeningStatsTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $ListeningStatsTableTable> {
+  $$ListeningStatsTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get totalSeconds => $composableBuilder(
+    column: $table.totalSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ListeningStatsTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ListeningStatsTableTable> {
+  $$ListeningStatsTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get totalSeconds => $composableBuilder(
+    column: $table.totalSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ListeningStatsTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ListeningStatsTableTable,
+          ListeningStatsTableData,
+          $$ListeningStatsTableTableFilterComposer,
+          $$ListeningStatsTableTableOrderingComposer,
+          $$ListeningStatsTableTableAnnotationComposer,
+          $$ListeningStatsTableTableCreateCompanionBuilder,
+          $$ListeningStatsTableTableUpdateCompanionBuilder,
+          (
+            ListeningStatsTableData,
+            BaseReferences<
+              _$AppDatabase,
+              $ListeningStatsTableTable,
+              ListeningStatsTableData
+            >,
+          ),
+          ListeningStatsTableData,
+          PrefetchHooks Function()
+        > {
+  $$ListeningStatsTableTableTableManager(
+    _$AppDatabase db,
+    $ListeningStatsTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ListeningStatsTableTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ListeningStatsTableTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$ListeningStatsTableTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> totalSeconds = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => ListeningStatsTableCompanion(
+                id: id,
+                totalSeconds: totalSeconds,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> totalSeconds = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => ListeningStatsTableCompanion.insert(
+                id: id,
+                totalSeconds: totalSeconds,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ListeningStatsTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ListeningStatsTableTable,
+      ListeningStatsTableData,
+      $$ListeningStatsTableTableFilterComposer,
+      $$ListeningStatsTableTableOrderingComposer,
+      $$ListeningStatsTableTableAnnotationComposer,
+      $$ListeningStatsTableTableCreateCompanionBuilder,
+      $$ListeningStatsTableTableUpdateCompanionBuilder,
+      (
+        ListeningStatsTableData,
+        BaseReferences<
+          _$AppDatabase,
+          $ListeningStatsTableTable,
+          ListeningStatsTableData
+        >,
+      ),
+      ListeningStatsTableData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1986,4 +3664,8 @@ class $AppDatabaseManager {
       $$BooksTableTableTableManager(_db, _db.booksTable);
   $$PlayHistoryTableTableTableManager get playHistoryTable =>
       $$PlayHistoryTableTableTableManager(_db, _db.playHistoryTable);
+  $$DownloadChaptersTableTableTableManager get downloadChaptersTable =>
+      $$DownloadChaptersTableTableTableManager(_db, _db.downloadChaptersTable);
+  $$ListeningStatsTableTableTableManager get listeningStatsTable =>
+      $$ListeningStatsTableTableTableManager(_db, _db.listeningStatsTable);
 }
