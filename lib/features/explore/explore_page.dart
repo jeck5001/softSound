@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:soft_sound/services/kuwo_rank_api.dart';
 import 'package:soft_sound/services/app_sources.dart';
+import 'package:soft_sound/services/lrts_rank_api.dart';
 import 'package:soft_sound/theme/app_colors.dart';
 import 'package:soft_sound/theme/app_strings.dart';
 import 'package:soft_sound/theme/app_widgets.dart';
@@ -245,13 +246,28 @@ class _SearchEntry extends StatelessWidget {
 }
 
 /// 排行榜入口卡片。
-class _RankingEntry extends StatelessWidget {
+///
+/// 副标题是**真实预览**：此前这里直接写死 `AppStrings.loadingRanking`，
+/// 卡片从不请求任何数据，于是永远显示「加载榜单…」（用户反馈"一直加载不出来"）。
+class _RankingEntry extends ConsumerWidget {
   final VoidCallback onTap;
 
   const _RankingEntry({required this.onTap});
 
+  /// 源1 = 「页签名 · 榜首书名」；源2 用静态首个页签名，不额外连网
+  /// （该 Edge 后端并发限流严格，能省一次请求就省一次）。
+  static String _subtitle(WidgetRef ref, LySource source) {
+    if (source == LySource.lrts) return LrtsRankApi.tabs.first.name;
+    return ref.watch(kuwoRankPreviewProvider).when(
+          loading: () => AppStrings.loadingRanking,
+          error: (_, _) => AppStrings.rankEntryHint,
+          data: (p) =>
+              p.topTitle.isEmpty ? p.tabName : '${p.tabName} · ${p.topTitle}',
+        );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = context.appColors;
     return GestureDetector(
       onTap: onTap,
@@ -290,7 +306,9 @@ class _RankingEntry extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    AppStrings.loadingRanking,
+                    _subtitle(ref, ref.watch(activeSourceProvider)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: c.mutedForeground, fontSize: 12),
                   ),
                 ],

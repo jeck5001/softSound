@@ -137,6 +137,26 @@ final kuwoRankApiProvider = Provider<KuwoRankApi>((ref) => KuwoRankApi());
 final kuwoClassifyProvider = FutureProvider<List<KuwoClassifySection>>(
     (ref) => ref.watch(kuwoRankApiProvider).fetchClassify());
 
+/// 发现页排行榜入口的预览内容：首个页签名 + 榜首书名。
+typedef KuwoRankPreview = ({String tabName, String topTitle});
+
+/// 排行榜入口预览。
+///
+/// 两步**串行**请求（`kuwo-rank-tabs` → `kuwo-rank-data?tabId=`）：该 Edge 后端
+/// 有并发限流（实测并发即 429 projectConcurrencyLimitExceeded），并行会自己把自己限死。
+/// 页签取不到时抛错，由 UI 显示可点的兜底文案（而不是假装一直在加载）。
+final kuwoRankPreviewProvider = FutureProvider<KuwoRankPreview>((ref) async {
+  final api = ref.watch(kuwoRankApiProvider);
+  final tabs = await api.fetchTabs();
+  if (tabs.isEmpty) throw StateError('榜单页签为空');
+  final tab = tabs.first;
+  final books = await api.fetchRankData(tab.id);
+  return (
+    tabName: tab.name,
+    topTitle: books.isEmpty ? '' : books.first.title,
+  );
+});
+
 /// 分类浏览数据（聆阅分类页的真实契约）。
 ///
 /// 三层结构：

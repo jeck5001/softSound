@@ -385,6 +385,8 @@ class AppStrings {
   static const loadingCategory = '正在为您拉取最新热播榜单数据';
   static const loadingCategoryBooks = '正在为您高速拉取精选好书';
   static const loadingRanking = '加载榜单…';
+  /// 发现页排行榜入口：取不到预览数据时的兜底（不能显示「加载中」骗人一直转）。
+  static const rankEntryHint = '点击查看榜单';
 
   // ---------------------------------------------------------------- 通用状态
 
