@@ -255,14 +255,39 @@ class _RankingEntry extends ConsumerWidget {
   const _RankingEntry({required this.onTap});
 
   /// 源1 = 「页签名 · 榜首书名」；源2 用静态首个页签名，不额外连网
-  /// （该 Edge 后端并发限流严格，能省一次请求就省一次）。
-  static String _subtitle(WidgetRef ref, LySource source) {
-    if (source == LySource.lrts) return LrtsRankApi.tabs.first.name;
+  /// （该 Edge 后端是项目级并发配额，能省一次请求就省一次）。
+  ///
+  /// 三种状态都必须是**终态**：加载中最多挂 [previewDeadline] 就会落到 error，
+  /// 所以不会出现「一直加载不出来」——取不到就给可点的兜底文案。
+  static Widget _subtitle(BuildContext context, WidgetRef ref, LySource source) {
+    final c = context.appColors;
+    if (source == LySource.lrts) {
+      return Text(
+        LrtsRankApi.tabs.first.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: c.mutedForeground, fontSize: 12),
+      );
+    }
     return ref.watch(kuwoRankPreviewProvider).when(
-          loading: () => AppStrings.loadingRanking,
-          error: (_, _) => AppStrings.rankEntryHint,
-          data: (p) =>
-              p.topTitle.isEmpty ? p.tabName : '${p.tabName} · ${p.topTitle}',
+          loading: () => Text(
+            AppStrings.loadingRanking,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.mutedForeground, fontSize: 12),
+          ),
+          error: (_, _) => Text(
+            AppStrings.rankEntryHint,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.mutedForeground, fontSize: 12),
+          ),
+          data: (p) => Text(
+            p.topTitle.isEmpty ? p.tabName : '${p.tabName} · ${p.topTitle}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.mutedForeground, fontSize: 12),
+          ),
         );
   }
 
@@ -305,12 +330,7 @@ class _RankingEntry extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    _subtitle(ref, ref.watch(activeSourceProvider)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: c.mutedForeground, fontSize: 12),
-                  ),
+                  _subtitle(context, ref, ref.watch(activeSourceProvider)),
                 ],
               ),
             ),

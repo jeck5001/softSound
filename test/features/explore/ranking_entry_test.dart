@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soft_sound/features/explore/explore_page.dart';
+import 'package:soft_sound/services/edge_gate.dart';
 import 'package:soft_sound/services/kuwo_rank_api.dart';
 import 'package:soft_sound/theme/app_strings.dart';
 
@@ -16,7 +17,12 @@ import 'package:soft_sound/theme/app_strings.dart';
 void main() {
   Future<void> pump(WidgetTester tester, List<Override> overrides) async {
     await tester.pumpWidget(ProviderScope(
-      overrides: overrides,
+      overrides: [
+        // 分类树会真的连 Edge（经串行闸门，带 300ms 间隔定时器）。
+        // 本文件只关心排行榜卡，分类直接给空 —— 也让用例不碰网络。
+        kuwoClassifyProvider.overrideWith((ref) async => const []),
+        ...overrides,
+      ],
       child: const MaterialApp(home: ExplorePage()),
     ));
     await tester.pump();
@@ -29,6 +35,7 @@ void main() {
     test('串行取页签 + 榜首书名', () async {
       final calls = <String>[];
       final api = KuwoRankApi(
+        gate: EdgeGate(minGap: Duration.zero),
         dio: Dio()
           ..httpClientAdapter = _StubAdapter((o) {
             calls.add(o.uri.path.split('/').last);
@@ -54,6 +61,7 @@ void main() {
 
     test('页签为空 → 抛错（由 UI 兜底，不返回空壳）', () async {
       final api = KuwoRankApi(
+        gate: EdgeGate(minGap: Duration.zero),
         dio: Dio()
           ..httpClientAdapter = _StubAdapter((_) => _resp('{"tabs":[]}')),
       );
@@ -70,6 +78,7 @@ void main() {
 
     test('榜首为空 → 只给页签名，不编造书名', () async {
       final api = KuwoRankApi(
+        gate: EdgeGate(minGap: Duration.zero),
         dio: Dio()
           ..httpClientAdapter = _StubAdapter((o) {
             if (o.uri.path.endsWith('kuwo-rank-tabs')) {
@@ -100,6 +109,25 @@ void main() {
       expect(find.text('热播榜 · 鬼吹灯1有声剧'), findsOneWidget);
       expect(find.text(AppStrings.loadingRanking), findsNothing,
           reason: '数据已就绪却仍显示加载中，就是本次的 bug');
+    });
+
+    testWidgets('超长榜首书名不撑破布局（单行省略）', (tester) async {
+      await pump(tester, [
+        kuwoRankPreviewProvider.overrideWith(
+          (ref) async => (
+            tabName: '热播榜',
+            // 真实观测：酷我榜首标题就是这种「书名|演播|题材」拼接
+            topTitle: '鬼吹灯1有声剧|景向谁依|郑希|张震|天下霸唱|盗墓鼻祖',
+          ),
+        ),
+      ]);
+
+      final text = tester.widget<Text>(
+        find.textContaining('热播榜 · 鬼吹灯1有声剧'),
+      );
+      expect(text.maxLines, 1, reason: '副标题必须单行');
+      expect(text.overflow, TextOverflow.ellipsis, reason: '超出必须省略');
+      expect(tester.takeException(), isNull, reason: '不允许溢出报错');
     });
 
     testWidgets('取不到预览时显示可点兜底，而不是永久加载中', (tester) async {

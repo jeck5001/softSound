@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'edge_gate.dart';
+
 /// 聆阅首页推荐流契约（2026-10-16 字节码 #18036 挖掘 + 实测）。
 ///
 /// ```
@@ -13,11 +15,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 书字段：id/title/author/narrator/cover/rating/listeners/description。
 /// 这是首页「图片驱动」的数据源（对应聆阅的精选焦点/恐怖专区等轮播）。
 class LrtsHomeApi {
-  LrtsHomeApi({Dio? dio, this.retryDelay = const Duration(seconds: 8)})
-      : _dio = dio ?? Dio();
+  LrtsHomeApi({
+    Dio? dio,
+    this.retryDelay = const Duration(milliseconds: 600),
+    this.maxAttempts = 2,
+    this.gate,
+    this.timeout = const Duration(seconds: 8),
+  }) : _dio = dio ?? Dio();
 
   final Dio _dio;
+
+  /// 429 之后的重试间隔（测试注入 `Duration.zero`）。
   final Duration retryDelay;
+
+  /// 总尝试次数（含首次）。
+  final int maxAttempts;
+
+  /// 串行闸门；`null` 时用全局 [edgeGate]。
+  final EdgeGate? gate;
+
+  /// 单次请求超时（裸 Dio 默认无限等）。
+  final Duration timeout;
 
   static const String _fnBase =
       'https://backend.appmiaoda.com/projects/supabase345057433544081408/functions/v1';
@@ -27,32 +45,38 @@ class LrtsHomeApi {
       'IjoyMTAxNjk1MzAzLCJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIiwic3ViIjoiYW5vbiJ9'
       '.d_zv-NO7ifqZtHZHdEFYo0Kaxldn9NeW7Yy4YmHnsnc';
 
-  Future<LrtsHomeData> fetchHome() async {
-    for (var attempt = 0; attempt <= 2; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(retryDelay);
+  /// 拉首页推荐流；限流/超时都按 [maxAttempts] 收口，绝不无限重试。
+  Future<LrtsHomeData> fetchHome() {
+    final g = gate ?? edgeGate;
+    return g.run(() async {
+      for (var attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(retryDelay);
+        }
+        try {
+          final r = await _dio.get<String>(
+            '$_fnBase/lrts-home',
+            options: Options(
+              responseType: ResponseType.plain,
+              validateStatus: (c) => c != null && c < 600,
+              headers: {
+                'apikey': _anonKey,
+                'Authorization': 'Bearer $_anonKey',
+              },
+              receiveTimeout: timeout,
+              sendTimeout: timeout,
+            ),
+          );
+          final body = r.data;
+          if (body == null) continue;
+          if (body.contains('projectConcurrencyLimitExceeded')) continue;
+          return parseHome(body);
+        } catch (_) {
+          // 重试
+        }
       }
-      try {
-        final r = await _dio.get<String>(
-          '$_fnBase/lrts-home',
-          options: Options(
-            responseType: ResponseType.plain,
-            validateStatus: (c) => c != null && c < 600,
-            headers: {
-              'apikey': _anonKey,
-              'Authorization': 'Bearer $_anonKey',
-            },
-          ),
-        );
-        final body = r.data;
-        if (body == null) continue;
-        if (body.contains('projectConcurrencyLimitExceeded')) continue;
-        return parseHome(body);
-      } catch (_) {
-        // 重试
-      }
-    }
-    return const LrtsHomeData.empty();
+      return const LrtsHomeData.empty();
+    });
   }
 
   /// 解析（独立方法便于 fixture 单测）。

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'edge_gate.dart';
 import 'kuwo_rank_api.dart' show KuwoRankBook;
 
 /// 懒人听书（lrts）排行榜 —— 契约来自 2026-10-16 对聆阅 Hermes 字节码的
@@ -22,13 +23,25 @@ import 'kuwo_rank_api.dart' show KuwoRankBook;
 class LrtsRankApi {
   LrtsRankApi({
     Dio? dio,
-    this.retryDelay = const Duration(seconds: 8),
+    this.retryDelay = const Duration(milliseconds: 600),
+    this.maxAttempts = 2,
+    this.gate,
+    this.timeout = const Duration(seconds: 8),
   }) : _dio = dio ?? Dio();
 
   final Dio _dio;
 
   /// 429 限流后的重试间隔（测试可注入 0）。
   final Duration retryDelay;
+
+  /// 总尝试次数（含首次）。
+  final int maxAttempts;
+
+  /// 串行闸门；`null` 时用全局 [edgeGate]。
+  final EdgeGate? gate;
+
+  /// 单次请求超时（裸 Dio 默认无限等）。
+  final Duration timeout;
 
   static const String _fnBase =
       'https://backend.appmiaoda.com/projects/supabase345057433544081408/functions/v1';
@@ -52,16 +65,24 @@ class LrtsRankApi {
   ];
 
   /// 拉取一个榜单（429 限流自动重试，与酷我榜一致的克制策略）。
+  ///
+  /// **失败会抛错，不再静默返回空列表**。区别很重要：
+  /// - 返回空列表 = 「这个榜确实没有内容」→ UI 显示「这个榜单暂时没有内容」
+  /// - 抛错       = 「没拿到」           → UI 显示「服务正忙」+ 重新加载
+  ///
+  /// 旧实现在 429 重试耗尽后也返回空列表，于是源2 榜单页永远显示
+  /// 「暂无内容」，而接口实测是能返回 100 本的 —— 把失败伪装成了空数据。
   Future<List<KuwoRankBook>> fetchRankBooks(LrtsRankTab tab) async {
-    final body = await _get('/lrts-rank?rankId=${tab.rankId}&rangeType=${tab.rangeType}');
-    if (body == null) return const [];
-    try {
-      final json = jsonDecode(body);
-      if (json is! Map) return const [];
-      return parseRankBooks(json);
-    } catch (_) {
-      return const [];
+    final body =
+        await _get('/lrts-rank?rankId=${tab.rankId}&rangeType=${tab.rangeType}');
+    if (body == null) {
+      throw const EdgeUnavailableException('lrts-rank 未返回内容');
     }
+    final json = jsonDecode(body);
+    if (json is! Map) {
+      throw const EdgeUnavailableException('lrts-rank 响应不是 JSON 对象');
+    }
+    return parseRankBooks(json);
   }
 
   /// 解析 `lrts-rank` 响应为通用榜行（复用 [KuwoRankBook] 行模型）。
@@ -85,32 +106,37 @@ class LrtsRankApi {
     ];
   }
 
-  Future<String?> _get(String path) async {
-    for (var attempt = 0; attempt <= 2; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(retryDelay);
+  Future<String?> _get(String path) {
+    final g = gate ?? edgeGate;
+    return g.run(() async {
+      for (var attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(retryDelay);
+        }
+        try {
+          final r = await _dio.get<String>(
+            '$_fnBase$path',
+            options: Options(
+              responseType: ResponseType.plain,
+              validateStatus: (c) => c != null && c < 600,
+              headers: {
+                'apikey': _anonKey,
+                'Authorization': 'Bearer $_anonKey',
+              },
+              receiveTimeout: timeout,
+              sendTimeout: timeout,
+            ),
+          );
+          final body = r.data;
+          if (body == null) return null;
+          if (body.contains('projectConcurrencyLimitExceeded')) continue;
+          return body;
+        } catch (_) {
+          // 重试
+        }
       }
-      try {
-        final r = await _dio.get<String>(
-          '$_fnBase$path',
-          options: Options(
-            responseType: ResponseType.plain,
-            validateStatus: (c) => c != null && c < 600,
-            headers: {
-              'apikey': _anonKey,
-              'Authorization': 'Bearer $_anonKey',
-            },
-          ),
-        );
-        final body = r.data;
-        if (body == null) return null;
-        if (body.contains('projectConcurrencyLimitExceeded')) continue;
-        return body;
-      } catch (_) {
-        // 重试
-      }
-    }
-    return null;
+      return null;
+    });
   }
 }
 

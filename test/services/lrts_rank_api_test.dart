@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soft_sound/services/edge_gate.dart';
 import 'package:soft_sound/services/lrts_rank_api.dart';
 import 'package:soft_sound/services/kuwo_rank_api.dart';
 
@@ -91,7 +92,11 @@ void main() {
           }
           return _resp(jsonEncode(real));
         });
-      final api = LrtsRankApi(dio: dio, retryDelay: Duration.zero);
+      final api = LrtsRankApi(
+        dio: dio,
+        retryDelay: Duration.zero,
+        gate: EdgeGate(minGap: Duration.zero),
+      );
 
       final books = await api.fetchRankBooks(LrtsRankApi.tabs.first);
       expect(books, isNotEmpty);
@@ -103,13 +108,40 @@ void main() {
       expect(captured.last.headers['Authorization'], startsWith('Bearer '));
     });
 
-    test('网络失败 → 空列表', () async {
+    test('网络失败 → 抛错（不能伪装成「这个榜没内容」）', () async {
       final dio = Dio()
         ..httpClientAdapter = _StubAdapter((o) => throw DioException(
               requestOptions: o,
             ));
-      final api = LrtsRankApi(dio: dio, retryDelay: Duration.zero);
-      expect(await api.fetchRankBooks(LrtsRankApi.tabs.first), isEmpty);
+      final api = LrtsRankApi(
+        dio: dio,
+        retryDelay: Duration.zero,
+        gate: EdgeGate(minGap: Duration.zero),
+      );
+      await expectLater(
+        api.fetchRankBooks(LrtsRankApi.tabs.first),
+        throwsA(isA<EdgeUnavailableException>()),
+      );
+    });
+
+    test('一直 429 → 有限次后抛错（不再 8 秒 × 无限重试）', () async {
+      var calls = 0;
+      final dio = Dio()
+        ..httpClientAdapter = _StubAdapter((o) {
+          calls++;
+          return _resp('{"code":"projectConcurrencyLimitExceeded"}', 429);
+        });
+      final api = LrtsRankApi(
+        dio: dio,
+        retryDelay: Duration.zero,
+        gate: EdgeGate(minGap: Duration.zero),
+      );
+
+      await expectLater(
+        api.fetchRankBooks(LrtsRankApi.tabs.first),
+        throwsA(isA<EdgeUnavailableException>()),
+      );
+      expect(calls, 2, reason: 'maxAttempts=2：首次 + 1 次重试，必须收口');
     });
   });
 
@@ -119,7 +151,10 @@ void main() {
           File('test/fixtures/kuwo_classify_real.json').readAsStringSync();
       final dio = Dio()
         ..httpClientAdapter = _StubAdapter((o) => _resp(body));
-      final api = KuwoRankApi(dio: dio);
+      final api = KuwoRankApi(
+        dio: dio,
+        gate: EdgeGate(minGap: Duration.zero),
+      );
 
       final sections = await api.fetchClassify();
       expect(sections.map((s) => s.name), [
@@ -140,7 +175,8 @@ void main() {
 
     test('畸形响应 → 空（不抛）', () async {
       final dio = Dio()..httpClientAdapter = _StubAdapter((o) => _resp('<html>'));
-      expect(await KuwoRankApi(dio: dio).fetchClassify(), isEmpty);
+      final api = KuwoRankApi(dio: dio, gate: EdgeGate(minGap: Duration.zero));
+      expect(await api.fetchClassify(), isEmpty);
     });
   });
 }

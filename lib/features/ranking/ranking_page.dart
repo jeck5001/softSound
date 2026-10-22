@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:soft_sound/services/edge_gate.dart';
 import 'package:soft_sound/services/kuwo_rank_api.dart';
 import 'package:soft_sound/services/lrts_rank_api.dart';
 import 'package:soft_sound/theme/app_colors.dart';
@@ -66,21 +67,43 @@ class _RankingPageState extends ConsumerState<RankingPage> {
       final api = ref.read(kuwoRankApiProvider);
       final tabs = await api.fetchTabs();
       if (!mounted) return;
+      // `fetchTabs()` 拿不到数据时返回空列表（不抛）。空列表**不等于**
+      // 「服务端没有页签」：429 被闸门收口后也是空。这里必须显式报错，
+      // 否则页面会静默落到「暂无数据」，看起来像榜单真的空了。
+      if (tabs.isEmpty) {
+        setState(() {
+          _loadingTabs = false;
+          _error = AppStrings.rankBusy;
+        });
+        return;
+      }
       setState(() {
         _kuwoTabs = tabs;
         _loadingTabs = false;
       });
       // 默认加载第一个页签的数据
-      if (tabs.isNotEmpty) {
-        await _selectKuwo(tabs.first);
-      }
+      await _selectKuwo(tabs.first);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loadingTabs = false;
-        _error = AppStrings.loadFailedNetwork;
+        _error = _describe(e);
       });
     }
+  }
+
+  /// 把异常翻译成用户能看懂的一句话。
+  ///
+  /// Edge 后端是项目级并发配额，取不到数据**最常见的原因不是网络**，
+  /// 而是 429；统一报「网络失败」会把人引到错误方向。
+  static String _describe(Object e) {
+    if (e is EdgeUnavailableException) return AppStrings.rankBusy;
+    final text = '$e';
+    if (text.contains('projectConcurrencyLimitExceeded') ||
+        text.contains('429')) {
+      return AppStrings.rankBusy;
+    }
+    return AppStrings.loadFailedNetwork;
   }
 
   /// 切换书源（保留已加载的酷我页签，不重复请求 tabs）。
@@ -109,7 +132,7 @@ class _RankingPageState extends ConsumerState<RankingPage> {
       if (!mounted) return;
       setState(() {
         _loadingBooks = false;
-        _error = AppStrings.loadFailedNetwork;
+        _error = _describe(e);
       });
     }
   }
@@ -132,7 +155,7 @@ class _RankingPageState extends ConsumerState<RankingPage> {
       if (!mounted) return;
       setState(() {
         _loadingBooks = false;
-        _error = AppStrings.loadFailedNetwork;
+        _error = _describe(e);
       });
     }
   }
@@ -241,11 +264,18 @@ class _RankingPageState extends ConsumerState<RankingPage> {
                           ? const AppLoadingState(
                               message: AppStrings.loadingRanking)
                           : (_books.isEmpty
-                              ? AppEmptyState(
-                                  icon: Icons.leaderboard_outlined,
-                                  title: AppStrings.noData,
-                                  description: AppStrings.loadingCategory,
-                                )
+                              ? (_error != null
+                                  ? AppErrorState(
+                                      message: _error!,
+                                      onRetry: _refresh,
+                                    )
+                                  : AppEmptyState(
+                                      icon: Icons.leaderboard_outlined,
+                                      title: AppStrings.rankEmpty,
+                                      description: AppStrings.loadingCategory,
+                                      actionLabel: AppStrings.reload,
+                                      onAction: _refresh,
+                                    ))
                               : _buildList(context)),
                     ),
                   ],

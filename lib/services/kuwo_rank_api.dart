@@ -3,17 +3,41 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'edge_gate.dart';
+
 /// 酷我排行榜数据源 —— 经聆阅的 Supabase Edge Functions。
 ///
 /// 2026-10-14 实测契约：
 /// - `GET kuwo-rank-tabs` → `{tabs: [{id, name, tags: [{id, name, rankCount}]}]}`
 /// - `GET kuwo-rank-data?tabId={id}` → `{list: [{id, title, cover, songNum, playCnt, rank}], total}`
 ///
-/// 服务端有并发限流（429），已内置重试。
+/// 服务端有**项目级**并发限流（429 `projectConcurrencyLimitExceeded`，
+/// 无 `Retry-After`），见 [EdgeGate] 的实测数据：并发即互相打挂。
+/// 因此这里的请求统一过 [EdgeGate] 串行，且重试次数/退避都有上限 ——
+/// 旧实现是「8 秒 × 重试 2 次」+ 裸 `Dio()` 无超时，最坏能挂 30 秒以上，
+/// 表现就是发现页那张卡一直停在「加载榜单…」。
 class KuwoRankApi {
-  KuwoRankApi({Dio? dio}) : _dio = dio ?? Dio();
+  KuwoRankApi({
+    Dio? dio,
+    this.retryDelay = const Duration(milliseconds: 600),
+    this.maxAttempts = 2,
+    this.gate,
+    this.timeout = const Duration(seconds: 8),
+  }) : _dio = dio ?? Dio();
 
   final Dio _dio;
+
+  /// 429 之后的重试间隔（测试注入 `Duration.zero`）。
+  final Duration retryDelay;
+
+  /// 总尝试次数（含首次）。1 = 不重试。
+  final int maxAttempts;
+
+  /// 串行闸门；`null` 时用全局 [edgeGate]（测试可注入独立实例）。
+  final EdgeGate? gate;
+
+  /// 单次请求超时。**必须**有值：裸 Dio 默认无限等，弱网下会永久卡住。
+  final Duration timeout;
 
   static const String _fnBase =
       'https://backend.appmiaoda.com/projects/supabase345057433544081408/functions/v1';
@@ -45,13 +69,21 @@ class KuwoRankApi {
   }
 
   /// 榜单书籍。
+  ///
+  /// **失败抛 [EdgeUnavailableException]，不静默返回空列表**：空列表意味着
+  /// 「这个榜确实没有内容」，UI 会显示「这个榜单暂时没有内容」；而没拿到
+  /// 数据必须显示「服务正忙 + 重新加载」，两者不能混为一谈。
   Future<List<KuwoRankBook>> fetchRankData(String tabId) async {
     final body = await _get('/kuwo-rank-data?tabId=$tabId');
-    if (body == null) return const [];
+    if (body == null) {
+      throw const EdgeUnavailableException('kuwo-rank-data 未返回内容');
+    }
     try {
       final json = jsonDecode(body) as Map<String, dynamic>;
       final list = json['list'];
-      if (list is! List) return const [];
+      if (list is! List) {
+        throw const EdgeUnavailableException('kuwo-rank-data 缺少 list');
+      }
       return [
         for (final b in list)
           if (b is Map)
@@ -64,37 +96,47 @@ class KuwoRankApi {
               rank: '${b['rank'] ?? ''}',
             ),
       ];
+    } on EdgeUnavailableException {
+      rethrow;
     } catch (e) {
-      return const [];
+      throw EdgeUnavailableException('kuwo-rank-data 解析失败: $e');
     }
   }
 
-  Future<String?> _get(String path) async {
-    for (var attempt = 0; attempt <= 2; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(const Duration(seconds: 8));
+  /// 单次 Edge 请求（经串行闸门 + 有限重试）。
+  ///
+  /// 返回 `null` 表示「确实没拿到」，调用方据此回退，不再无限等待。
+  Future<String?> _get(String path) {
+    final g = gate ?? edgeGate;
+    return g.run(() async {
+      for (var attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(retryDelay);
+        }
+        try {
+          final r = await _dio.get<String>(
+            '$_fnBase$path',
+            options: Options(
+              responseType: ResponseType.plain,
+              validateStatus: (c) => c != null && c < 600,
+              headers: {
+                'apikey': _anonKey,
+                'Authorization': 'Bearer $_anonKey',
+              },
+              receiveTimeout: timeout,
+              sendTimeout: timeout,
+            ),
+          );
+          final body = r.data;
+          if (body == null) return null;
+          if (body.contains('projectConcurrencyLimitExceeded')) continue;
+          return body;
+        } catch (_) {
+          // 超时/网络错误也按尝试次数上限走，绝不无限重试。
+        }
       }
-      try {
-        final r = await _dio.get<String>(
-          '$_fnBase$path',
-          options: Options(
-            responseType: ResponseType.plain,
-            validateStatus: (c) => c != null && c < 600,
-            headers: {
-              'apikey': _anonKey,
-              'Authorization': 'Bearer $_anonKey',
-            },
-          ),
-        );
-        final body = r.data;
-        if (body == null) return null;
-        if (body.contains('projectConcurrencyLimitExceeded')) continue;
-        return body;
-      } catch (_) {
-        // 重试
-      }
-    }
-    return null;
+      return null;
+    });
   }
 }
 
@@ -134,8 +176,13 @@ final kuwoRankApiProvider = Provider<KuwoRankApi>((ref) => KuwoRankApi());
 
 /// 线上分类树（`kuwo-classify`；2026-10-16 实测契约，7 个大类）。
 /// 失败返回空列表，由 UI 回退到本地兜底分类。
-final kuwoClassifyProvider = FutureProvider<List<KuwoClassifySection>>(
-    (ref) => ref.watch(kuwoRankApiProvider).fetchClassify());
+///
+/// `keepAlive`：发现页重建时不必重打一次 Edge 请求（配额紧张，见 [EdgeGate]）。
+final kuwoClassifyProvider =
+    FutureProvider<List<KuwoClassifySection>>((ref) {
+  ref.keepAlive();
+  return ref.watch(kuwoRankApiProvider).fetchClassify();
+});
 
 /// 发现页排行榜入口的预览内容：首个页签名 + 榜首书名。
 typedef KuwoRankPreview = ({String tabName, String topTitle});
@@ -143,10 +190,25 @@ typedef KuwoRankPreview = ({String tabName, String topTitle});
 /// 排行榜入口预览。
 ///
 /// 两步**串行**请求（`kuwo-rank-tabs` → `kuwo-rank-data?tabId=`）：该 Edge 后端
-/// 有并发限流（实测并发即 429 projectConcurrencyLimitExceeded），并行会自己把自己限死。
+/// 是项目级并发配额，并行会自己把自己限死（见 [EdgeGate] 实测）。
 /// 页签取不到时抛错，由 UI 显示可点的兜底文案（而不是假装一直在加载）。
-final kuwoRankPreviewProvider = FutureProvider<KuwoRankPreview>((ref) async {
+///
+/// `keepAlive`：发现页每次切回底部 tab 都会重建，不保活就会重新打两次
+/// Edge 请求，在本来就紧张的配额里白白多占两份。
+///
+/// 整体再套一个 [previewDeadline]：卡片是副标题，绝不能为了它把用户
+/// 卡在「加载榜单…」上十几秒。超时即抛错 → UI 换成可点的兜底文案。
+final kuwoRankPreviewProvider =
+    FutureProvider<KuwoRankPreview>((ref) async {
+  ref.keepAlive();
   final api = ref.watch(kuwoRankApiProvider);
+  return _fetchPreview(api).timeout(previewDeadline);
+});
+
+/// 预览的整体预算（含闸门排队 + 重试）。
+const Duration previewDeadline = Duration(seconds: 7);
+
+Future<KuwoRankPreview> _fetchPreview(KuwoRankApi api) async {
   final tabs = await api.fetchTabs();
   if (tabs.isEmpty) throw StateError('榜单页签为空');
   final tab = tabs.first;
@@ -155,7 +217,7 @@ final kuwoRankPreviewProvider = FutureProvider<KuwoRankPreview>((ref) async {
     tabName: tab.name,
     topTitle: books.isEmpty ? '' : books.first.title,
   );
-});
+}
 
 /// 分类浏览数据（聆阅分类页的真实契约）。
 ///

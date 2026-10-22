@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'edge_gate.dart';
+
 import 'lrts_home_api.dart' show LrtsHomeBook;
 
 /// 懒人听书分类书籍（聆阅字节码 #18053 双路契约，2026-10-16 实测）。
@@ -13,11 +15,27 @@ import 'lrts_home_api.dart' show LrtsHomeBook;
 ///   `href="/book/(\d+)"[^>]*>\s*<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"`
 ///   （alt 形如「书名-作者」，聆阅按 `–`/`-` 切分）。
 class LrtsCategoryApi {
-  LrtsCategoryApi({Dio? dio, this.retryDelay = const Duration(seconds: 8)})
-      : _dio = dio ?? Dio();
+  LrtsCategoryApi({
+    Dio? dio,
+    this.retryDelay = const Duration(milliseconds: 600),
+    this.maxAttempts = 2,
+    this.gate,
+    this.timeout = const Duration(seconds: 8),
+  }) : _dio = dio ?? Dio();
 
   final Dio _dio;
+
+  /// 429 之后的重试间隔（测试注入 `Duration.zero`）。
   final Duration retryDelay;
+
+  /// 总尝试次数（含首次）。
+  final int maxAttempts;
+
+  /// 串行闸门；`null` 时用全局 [edgeGate]。
+  final EdgeGate? gate;
+
+  /// 单次请求超时（裸 Dio 默认无限等）。
+  final Duration timeout;
 
   static const String _fnBase =
       'https://backend.appmiaoda.com/projects/supabase345057433544081408/functions/v1';
@@ -129,32 +147,37 @@ class LrtsCategoryApi {
     return out;
   }
 
-  Future<String?> _edgeGet(String path) async {
-    for (var attempt = 0; attempt <= 2; attempt++) {
-      if (attempt > 0) {
-        await Future<void>.delayed(retryDelay);
+  Future<String?> _edgeGet(String path) {
+    final g = gate ?? edgeGate;
+    return g.run(() async {
+      for (var attempt = 0; attempt < maxAttempts; attempt++) {
+        if (attempt > 0) {
+          await Future<void>.delayed(retryDelay);
+        }
+        try {
+          final r = await _dio.get<String>(
+            '$_fnBase$path',
+            options: Options(
+              responseType: ResponseType.plain,
+              validateStatus: (c) => c != null && c < 600,
+              headers: {
+                'apikey': _anonKey,
+                'Authorization': 'Bearer $_anonKey',
+              },
+              receiveTimeout: timeout,
+              sendTimeout: timeout,
+            ),
+          );
+          final body = r.data;
+          if (body == null) return null;
+          if (body.contains('projectConcurrencyLimitExceeded')) continue;
+          return body;
+        } catch (_) {
+          // 重试
+        }
       }
-      try {
-        final r = await _dio.get<String>(
-          '$_fnBase$path',
-          options: Options(
-            responseType: ResponseType.plain,
-            validateStatus: (c) => c != null && c < 600,
-            headers: {
-              'apikey': _anonKey,
-              'Authorization': 'Bearer $_anonKey',
-            },
-          ),
-        );
-        final body = r.data;
-        if (body == null) return null;
-        if (body.contains('projectConcurrencyLimitExceeded')) continue;
-        return body;
-      } catch (_) {
-        // 重试
-      }
-    }
-    return null;
+      return null;
+    });
   }
 }
 

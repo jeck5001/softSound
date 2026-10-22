@@ -387,6 +387,10 @@ class AppStrings {
   static const loadingRanking = '加载榜单…';
   /// 发现页排行榜入口：取不到预览数据时的兜底（不能显示「加载中」骗人一直转）。
   static const rankEntryHint = '点击查看榜单';
+  /// 榜单页：服务端配额被占满（429 projectConcurrencyLimitExceeded）时的说明。
+  static const rankBusy = '榜单服务正忙（请求排队中），请稍后重试';
+  /// 榜单页：请求成功但该榜确实没有数据。
+  static const rankEmpty = '这个榜单暂时没有内容';
 
   // ---------------------------------------------------------------- 通用状态
 
