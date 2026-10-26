@@ -404,3 +404,58 @@ Edge 后端（秒搭托管的 Supabase）在高峰持续返回
 - 聆阅首页栏目化展示（`lrts-home` 的 15 个 section 已固化为 fixture，UI 待接）
 - 懒人多榜页签进发现页（`lrts_children_tabs_v2`：63/3027/9031… 已提取）
 - base.apk（飞鸟听书）仍是 360 加固静态死路，与本轮无关
+
+---
+
+## 10. 追加轮次：2026-10-26 远端配置 / 频道页 / 存储键纠错
+
+继续在同一份 Hermes 反汇编（`/tmp/hasm_out`）上按函数体挖掘，新契约全部做真实请求验证，
+再把可用部分搬进项目。本轮结论与证据如下（详细搬运清单见
+`docs/reverse-engineering/lingting/UI_PORT.md` §6.33–6.36）。
+
+### 10.1 新端点：`remote-config`（此前 15 个端点之外的第 16 个）
+
+| 端点 | 出处 | 实测（2026-10-26） | 落地 |
+|---|---|---|---|
+| `POST /functions/v1/remote-config`（空 body） | #20358 模块 + #20370 `functions.invoke` | ✅ 200，791 B：version/announcement/umeng/play_api/festivals/server_time | `RemoteConfigApi` |
+| `GET http://www.tingshu8.top/api.php`（等价直连） | #20358 `DEFAULT_CONFIG.version` 邻近字面量 | ✅ 200，内容一致；`?do=check_update` 只回 version 段 | 作为兜底保留在文档 |
+| Supabase REST `announcements` | #17847 `fetchActiveAnnouncements` | ⚠️ 200 但 `[]`（RLS 限制） | 未用，公告以 remote-config 为准 |
+
+关键语义（字节码逐字）：
+
+- 公告已读键 `rc_ann_dismiss_v1`，指纹算法 `djb2(title\1content\1link_url\1link_text)` → base36；
+  实测指纹 `1kr0eu9`（Dart 实现与 node 独立复算一致，已写成断言）。
+- 更新提示：逐段比较 `version_name`（不是字符串比较），
+  有更新才弹；`download_url` 为空时回落 `download_url2`；说明为空时用
+  「修复已知问题，优化使用体验」。
+- `play_api`：`enabled && url` 时酷我播放改走 `{origin}/kuwo.php?type=&rid=`
+  （#17988 `resolvePlayHost` + #17989 `buildPlayUrl`）；服务端当前关闭。
+
+### 10.2 新契约：`fetchLrtsChildren`（懒人频道页，不经 Edge）
+
+`GET https://m.lrts.me/category/book?title={分类名}&rootId={id}&index=-2`（iPhone UA）
+→ 解析 `window.__NUXT__` → `{title, rootId, tabList, recommendList, subTypeRecommendList}`。
+
+- 出处：#18087/18088/18090（主逻辑 1991 B）、#18091 `mapChildBook`、
+  #18093 页签过滤、#18096 Set 去重、#18098 子栏目循环。
+- 实测：儿童页 200 / 282 KB；tabList 16（过滤后 14）、recommendList 8、16 个子栏目。
+- 同一 SSR 解析也服务 `lrts-home` 直连兜底（`title=有声小说&rootId=1`，#18036）。
+- 因不经 Edge，**天然绕开 `projectConcurrencyLimitExceeded`**。
+
+### 10.3 纠错：存储键前缀是 `tingshu_*`
+
+早前 §5.1 写的 `shu_*` 前缀是错的。反汇编里 `shu_` 独立前缀 0 命中，
+命中的 67 处均为 `tingshu_` 的子串。21 个键与取值形态见 README 的「2026-10-26 追加」表。
+
+其中两处语义与旧实现不同，已改：
+
+1. `tingshu_skip_intro` / `tingshu_skip_outro` 存的是**秒数**（`clamp(0..180)`，0=关），
+   不是「布尔 + 另一个 seconds 键」。
+2. 音质只有三档且落盘值是 `128` / `320` / `flac`，标签为 `标准` / `高品` / `无损`。
+
+### 10.4 本轮未搬运（明确留档）
+
+- `festivals`（节日主题）：服务端当前 `[]`，主题资源为本地图标/渐变，仅在远端下发时展示。
+- 多设备同步（`lingyue_my_sync_code_v1`、`syncDeviceData`、`user_play_history`）：
+  需登录态与写库权限。
+- `umeng` 统计与 `stat_*.php` 心跳：与功能无关。

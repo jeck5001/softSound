@@ -7,7 +7,10 @@ import 'package:soft_sound/theme/app_theme.dart';
 import 'package:soft_sound/theme/playback_settings.dart';
 import 'package:soft_sound/theme/theme_controller.dart';
 
+import 'package:soft_sound/services/remote_config_api.dart';
+
 import '../downloads/downloads_notifier.dart';
+import 'update_dialogs.dart';
 import 'package:soft_sound/data/models/listener_stats.dart';
 import 'package:soft_sound/data/repositories/stats_repository.dart';
 
@@ -155,14 +158,16 @@ class SettingsPage extends ConsumerWidget {
           SettingsTile(
             icon: Icons.system_update_outlined,
             title: AppStrings.checkUpdate,
-            subtitle: AppStrings.alreadyLatest,
-            onTap: () => _snack(context, AppStrings.alreadyLatest),
+            // 此前这里写死「已是最新版本」并且点击只弹同一句话 —— 是假功能。
+            // 现在走聆阅的真实契约（remote-config），见 [_checkUpdate]。
+            subtitle: AppStrings.updateBrowserHint,
+            onTap: () => _checkUpdate(context, ref),
           ),
 
           const SizedBox(height: 24),
           Center(
             child: Text(
-              '${AppStrings.appName} · v1.1.7',
+              '${AppStrings.appName} · v${AppStrings.appVersion}',
               style: TextStyle(color: c.mutedForeground, fontSize: 12),
             ),
           ),
@@ -373,6 +378,29 @@ class SettingsPage extends ConsumerWidget {
       if (!context.mounted) return;
       _snack(context, AppStrings.cacheCleared);
     }
+  }
+
+  /// 检查更新（聆阅 `remote-config` 契约，2026-10-26 实测）。
+  ///
+  /// 流程与字节码 #21402 一致：拉配置 → 逐段比较版本号 → 有更新弹窗，
+  /// 无更新提示「当前已是最新版本 (vX)」。限流/失败给可读提示，不假装成功。
+  Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
+    _snack(context, AppStrings.checkingUpdate);
+    RemoteConfig cfg;
+    try {
+      // 复用会话级缓存（与启动公告共用同一次请求）。
+      cfg = await ref.read(remoteConfigProvider.future);
+    } catch (_) {
+      if (context.mounted) _snack(context, AppStrings.networkError);
+      return;
+    }
+    if (!context.mounted) return;
+
+    if (!cfg.shouldPromptUpdate(AppStrings.appVersion)) {
+      _snack(context, '${AppStrings.alreadyLatest}${AppStrings.appVersion})');
+      return;
+    }
+    await showUpdateDialog(context, version: cfg.version);
   }
 
   /// 确认清空累计收听统计。

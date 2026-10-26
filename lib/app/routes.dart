@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:soft_sound/features/home/announcement_gate.dart';
 import 'package:soft_sound/features/home/home_page.dart';
 import 'package:soft_sound/features/explore/explore_page.dart';
 import 'package:soft_sound/features/bookshelf/bookshelf_page.dart';
@@ -17,6 +18,7 @@ import 'package:soft_sound/features/settings/settings_page.dart';
 import 'package:soft_sound/features/reading/reading_page.dart';
 import 'package:soft_sound/features/explore/category_books_page.dart';
 import 'package:soft_sound/features/explore/lrts_category_books_page.dart';
+import 'package:soft_sound/features/explore/lrts_channel_page.dart';
 import 'package:soft_sound/services/player_service.dart';
 import 'package:soft_sound/theme/app_colors.dart';
 import 'package:soft_sound/theme/app_strings.dart';
@@ -146,6 +148,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           name: state.uri.queryParameters['name'] ?? '分类',
         ),
       ),
+      // 懒人「频道页」：一个分类的首页（页签 + 多栏目），
+      // 契约来自字节码 #18090 `fetchLrtsChildren`（直接抓 Nuxt SSR，
+      // 不经 Edge，因此不受 429 影响）。
+      GoRoute(
+        path: '/lrts-channel/:rootId',
+        name: 'lrts_channel',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => LrtsChannelPage(
+          rootId: state.pathParameters['rootId']!,
+          title: state.uri.queryParameters['name'] ?? '分类',
+        ),
+      ),
       GoRoute(
         path: '/reading',
         name: 'reading',
@@ -185,7 +199,9 @@ class MainScaffold extends ConsumerWidget {
     return Scaffold(
       body: Stack(
         children: [
-          navigationShell,
+          // 启动公告闸门（聆阅 remote-config 契约）：
+          // 挂在壳层，避免只在使用某个页签时才检查。
+          AnnouncementGate(child: navigationShell),
           if (showMini)
             Positioned(
               left: 12,

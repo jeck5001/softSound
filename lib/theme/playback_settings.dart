@@ -5,29 +5,68 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_strings.dart';
 
 /// 音质枚举 —— 对应聆阅的「选择音质」。
+///
+/// 取值与文案逐字来自聆阅字节码 #225xx（下载/播放页的音质选项数组）：
+///
+/// | 存储值 | 标签 | 说明 |
+/// |---|---|---|
+/// | `128` | 标准 | 128kbps · 流畅省流量 |
+/// | `320` | 高品 | 320kbps · 高清音质 |
+/// | `flac` | 无损 | FLAC · 原音无损 |
+///
+/// 旧实现用的 `low/standard/high/lossless` 与聆阅落盘值不兼容，
+/// 这里改为聆阅原值，并保留旧值作为读取时的别名（向后兼容既有用户数据）。
 enum AudioQuality {
-  low('low', '流畅'),
-  standard('standard', '标准'),
-  high('high', '高清'),
-  lossless('lossless', '无损');
+  standard('128', '标准', '128kbps · 流畅省流量'),
+  high('320', '高品', '320kbps · 高清音质'),
+  lossless('flac', '无损', 'FLAC · 原音无损');
 
   final String storageKey;
   final String label;
+  final String description;
 
-  const AudioQuality(this.storageKey, this.label);
+  const AudioQuality(this.storageKey, this.label, this.description);
+
+  /// 旧版本落盘值 → 新枚举（`low→standard`、`high→high`、`lossless→lossless`）。
+  static const Map<String, AudioQuality> _legacyAliases = {
+    'low': AudioQuality.standard,
+    'standard': AudioQuality.standard,
+    'high': AudioQuality.high,
+    'lossless': AudioQuality.lossless,
+  };
 
   static AudioQuality fromStorageKey(String? key) {
     if (key == null) return AudioQuality.standard;
     for (final q in AudioQuality.values) {
       if (q.storageKey == key) return q;
     }
-    return AudioQuality.standard;
+    return _legacyAliases[key] ?? AudioQuality.standard;
   }
 }
 
-/// 播放设置状态 —— 对齐聆阅的 `shu_*` 存储键。
+/// 播放设置状态 —— 对齐聆阅的 `tingshu_*` 存储键。
 ///
 /// 覆盖聆阅设置页「🔊 播放与音频」分组下的可持久化选项。
+///
+/// 键名与取值形态均以 2026-10-26 字节码 #16799（21 个键的批量读取）
+/// 与 #16823/#16829/#17021/#17023（各键 setter）为准：
+///
+/// | 键 | 形态 | 说明 |
+/// |---|---|---|
+/// | `tingshu_playback_speed` | 字符串数字 | `String(speed)` |
+/// | `tingshu_audio_quality` | 字符串 | `standard` / `high` / `flac` 等 |
+/// | `tingshu_skip_intro` | **数字秒** | `0..180`，**0 表示关闭** |
+/// | `tingshu_skip_outro` | **数字秒** | 同上 |
+/// | `tingshu_chapter_order` | 字符串 | `asc` / `desc` |
+/// | `tingshu_boost_level` | 字符串 | 增益档位 |
+/// | `tingshu_volume_boost_enabled` / `_gain` | 布尔 / 数字 | |
+/// | `tingshu_audio_mixing` | 布尔 | |
+/// | `tingshu_animations_enabled` | 布尔 | |
+///
+/// 注意：**不存在 `shu_` 前缀的键**（旧文档的写法是错的，已在代码中纠正）。
+/// 跳片头/片尾在聆阅里是「秒数」而非「开关 + 秒数」两个键，
+/// 因此这里对外仍暴露 [PlaybackSettingsState.skipIntro] 布尔便利属性，
+/// 但落盘统一写秒数（0 = 关），便于与聆阅数据互通。
 @immutable
 class PlaybackSettingsState {
   /// 播放倍速（聆阅范围 0.25 步进）。
@@ -105,7 +144,7 @@ class PlaybackSettingsState {
 
 /// 播放设置控制器。
 ///
-/// 存储键前缀与聆阅一致（`shu_`），便于后续与聆阅数据对齐。
+/// 存储键与聆阅逐字一致（`tingshu_*`），便于与聆阅数据互通。
 class PlaybackSettingsController extends StateNotifier<PlaybackSettingsState> {
   PlaybackSettingsController() : super(const PlaybackSettingsState()) {
     _restore();
@@ -114,85 +153,124 @@ class PlaybackSettingsController extends StateNotifier<PlaybackSettingsState> {
   /// 可选倍速档位（对齐聆阅的 0.25 步进）。
   static const List<double> speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 
-  static const String _kSpeed = 'shu_playback_speed';
-  static const String _kQuality = 'shu_audio_quality';
-  static const String _kVolumeBoost = 'shu_volume_boost_enabled';
-  static const String _kVolumeGain = 'shu_volume_boost_gain';
-  static const String _kAudioMixing = 'shu_audio_mixing';
-  static const String _kSkipIntro = 'shu_skip_intro';
-  static const String _kIntroSeconds = 'shu_skip_intro_seconds';
-  static const String _kSkipOutro = 'shu_skip_outro';
-  static const String _kOutroSeconds = 'shu_skip_outro_seconds';
-  static const String _kChapterOrder = 'shu_chapter_order_play';
+  /// 存储键（聆阅字节码逐字，2026-10-26 复核）。
+  static const String kSpeedKey = 'tingshu_playback_speed';
+  static const String kQualityKey = 'tingshu_audio_quality';
+  static const String kVolumeBoostKey = 'tingshu_volume_boost_enabled';
+  static const String kVolumeGainKey = 'tingshu_volume_boost_gain';
+  static const String kAudioMixingKey = 'tingshu_audio_mixing';
+  static const String kSkipIntroKey = 'tingshu_skip_intro';
+  static const String kSkipOutroKey = 'tingshu_skip_outro';
+  static const String kChapterOrderKey = 'tingshu_chapter_order';
+  static const String kAnimationsKey = 'tingshu_animations_enabled';
+
+  /// 跳片头/片尾秒数的合法范围（字节码 `Math.min(180, Math.max(0, x))`）。
+  static const int skipSecondsMax = 180;
+
+  /// 章节顺序的存储值（字节码 `'asc'` / `'desc'`）。
+  static const String orderAsc = 'asc';
+  static const String orderDesc = 'desc';
 
   Future<void> _restore() async {
     try {
       final p = await SharedPreferences.getInstance();
+      // 聆阅把倍速存成字符串数字（`String(speed)`），这里兼容数字与字符串两种。
+      final rawSpeed = p.get(kSpeedKey);
+      final speed = rawSpeed is num
+          ? rawSpeed.toDouble()
+          : double.tryParse('${rawSpeed ?? ''}') ?? 1.0;
+      // 跳片头/片尾：聆阅存的是**秒数**，0 表示关闭。
+      final intro = _clampSkipSeconds(_readInt(p, kSkipIntroKey));
+      final outro = _clampSkipSeconds(_readInt(p, kSkipOutroKey));
+      final order = p.getString(kChapterOrderKey) ?? '';
+
       state = PlaybackSettingsState(
-        speed: p.getDouble(_kSpeed) ?? 1.0,
-        quality: AudioQuality.fromStorageKey(p.getString(_kQuality)),
-        volumeBoostEnabled: p.getBool(_kVolumeBoost) ?? false,
-        volumeBoostGain: p.getInt(_kVolumeGain) ?? 600,
-        audioMixing: p.getBool(_kAudioMixing) ?? false,
-        skipIntro: p.getBool(_kSkipIntro) ?? false,
-        introSeconds: p.getInt(_kIntroSeconds) ?? 30,
-        skipOutro: p.getBool(_kSkipOutro) ?? false,
-        outroSeconds: p.getInt(_kOutroSeconds) ?? 30,
-        chapterOrderAscending: p.getBool(_kChapterOrder) ?? true,
+        speed: speed <= 0 ? 1.0 : speed,
+        quality: AudioQuality.fromStorageKey(p.getString(kQualityKey)),
+        volumeBoostEnabled: p.getBool(kVolumeBoostKey) ?? false,
+        volumeBoostGain: p.getInt(kVolumeGainKey) ?? 600,
+        audioMixing: p.getBool(kAudioMixingKey) ?? false,
+        skipIntro: intro > 0,
+        introSeconds: intro > 0 ? intro : 30,
+        skipOutro: outro > 0,
+        outroSeconds: outro > 0 ? outro : 30,
+        chapterOrderAscending: order != orderDesc,
       );
     } catch (e) {
       debugPrint('恢复播放设置失败: $e');
     }
   }
 
+  /// 读取整数键（兼容曾被写成字符串的历史数据）。
+  static int _readInt(SharedPreferences p, String key) {
+    final v = p.get(key);
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is bool) return v ? 1 : 0;
+    return int.tryParse('${v ?? ''}') ?? 0;
+  }
+
+  /// 秒数钳制到 `0..180`（字节码 `Math.min(180, Math.max(0, x))`）。
+  static int _clampSkipSeconds(int v) {
+    if (v < 0) return 0;
+    if (v > skipSecondsMax) return skipSecondsMax;
+    return v;
+  }
+
   Future<void> setSpeed(double v) async {
     state = state.copyWith(speed: v);
-    await _put((p) => p.setDouble(_kSpeed, v));
+    // 聆阅存字符串（`String(speed)`），照搬以便互通。
+    await _put((p) => p.setString(kSpeedKey, '$v'));
   }
 
   Future<void> setQuality(AudioQuality v) async {
     state = state.copyWith(quality: v);
-    await _put((p) => p.setString(_kQuality, v.storageKey));
+    await _put((p) => p.setString(kQualityKey, v.storageKey));
   }
 
   Future<void> setVolumeBoostEnabled(bool v) async {
     state = state.copyWith(volumeBoostEnabled: v);
-    await _put((p) => p.setBool(_kVolumeBoost, v));
+    await _put((p) => p.setBool(kVolumeBoostKey, v));
   }
 
   Future<void> setVolumeBoostGain(int v) async {
     state = state.copyWith(volumeBoostGain: v);
-    await _put((p) => p.setInt(_kVolumeGain, v));
+    await _put((p) => p.setInt(kVolumeGainKey, v));
   }
 
   Future<void> setAudioMixing(bool v) async {
     state = state.copyWith(audioMixing: v);
-    await _put((p) => p.setBool(_kAudioMixing, v));
+    await _put((p) => p.setBool(kAudioMixingKey, v));
   }
 
   Future<void> setSkipIntro(bool v) async {
     state = state.copyWith(skipIntro: v);
-    await _put((p) => p.setBool(_kSkipIntro, v));
+    // 关闭时写 0（聆阅语义：秒数为 0 即关闭）。
+    await _put((p) => p.setInt(kSkipIntroKey, v ? state.introSeconds : 0));
   }
 
   Future<void> setIntroSeconds(int v) async {
-    state = state.copyWith(introSeconds: v);
-    await _put((p) => p.setInt(_kIntroSeconds, v));
+    final secs = _clampSkipSeconds(v);
+    state = state.copyWith(introSeconds: secs);
+    await _put(
+        (p) => p.setInt(kSkipIntroKey, state.skipIntro ? secs : 0));
   }
 
   Future<void> setSkipOutro(bool v) async {
     state = state.copyWith(skipOutro: v);
-    await _put((p) => p.setBool(_kSkipOutro, v));
+    await _put((p) => p.setInt(kSkipOutroKey, v ? state.outroSeconds : 0));
   }
 
   Future<void> setOutroSeconds(int v) async {
-    state = state.copyWith(outroSeconds: v);
-    await _put((p) => p.setInt(_kOutroSeconds, v));
+    final secs = _clampSkipSeconds(v);
+    state = state.copyWith(outroSeconds: secs);
+    await _put(
+        (p) => p.setInt(kSkipOutroKey, state.skipOutro ? secs : 0));
   }
 
   Future<void> setChapterOrderAscending(bool v) async {
     state = state.copyWith(chapterOrderAscending: v);
-    await _put((p) => p.setBool(_kChapterOrder, v));
+    await _put((p) => p.setString(kChapterOrderKey, v ? orderAsc : orderDesc));
   }
 
   Future<void> _put(Future<void> Function(SharedPreferences) fn) async {

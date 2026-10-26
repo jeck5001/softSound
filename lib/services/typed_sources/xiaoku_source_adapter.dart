@@ -469,13 +469,12 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
   /// 把音质偏好映射为酷我 `br` 参数。
   ///
   /// 酷我支持的常见取值：`128kmp3` / `192kmp3` / `320kmp3` / `2000kflac`。
-  /// 未知或不支持时回退到 320kmp3（与历史行为一致）。
+  /// 三档与聆阅的音质选项一一对应（聆阅落盘值 `128`/`320`/`flac`）：
+  /// 标准→128k、高品→320k、无损→FLAC。未知时回退 320kmp3（历史行为）。
   String _brForQuality(AudioQuality? quality) {
     switch (quality) {
-      case AudioQuality.low:
-        return '128kmp3';
       case AudioQuality.standard:
-        return '192kmp3';
+        return '128kmp3';
       case AudioQuality.high:
         return '320kmp3';
       case AudioQuality.lossless:

@@ -72,3 +72,104 @@ grep -oE "# String: '([^']*)'" /tmp/hasm_out \
 grep -n "lrts-rank" /tmp/hasm_out                      # 调用点
 awk 'NR<=<行号> && /^=> \[Function/ {l=$0} END{print l}' /tmp/hasm_out   # 所属函数
 ```
+
+## 2026-10-26 追加（第四轮：远端配置 + 频道页 + 存储键纠错）
+
+同一份 Hermes 反汇编（`/tmp/hasm_out`，22,819 函数）按函数体继续挖，
+随后对每个新契约做真实请求验证。本轮产物：
+
+### 1. `remote-config` Edge Function（此前完全未知）
+
+```
+POST {edge}/functions/v1/remote-config      body: {}
+  headers: apikey / Authorization: Bearer <anonKey>
+→ {code:0, message:"ok", data:{
+     version:{version_code, version_name, update_description,
+              download_url, download_url2, has_update, force_update},
+     announcement:{title, content, has_link, link_url, link_text,
+                   open_external, created_at, updated_at} | null,
+     umeng:{enabled, app_key, channel},
+     play_api:{enabled, url},
+     festivals:[...],
+     server_time:"2026-10-26 12:14:22"
+  }}
+```
+
+- 出处：字节码 #20358（`DEFAULT_CONFIG` 字面量 + 模块导出）、#20370（`functions.invoke('remote-config')`）。
+- 另有等价直连 `http://www.tingshu8.top/api.php`（同样 `{code,message,data}`；
+  `?do=check_update` 只返回 `version` 段）——2026-10-26 两者均 200，内容一致。
+- 本地缓存键 `tingshu_remote_config_cache_v1`；公告已读键 **`rc_ann_dismiss_v1`**。
+- 公告「不再显示」用**内容指纹**判定（#20382）：`title\1content\1link_url\1link_text`
+  做 djb2（`hash*33 + code`，`>>> 0`）后 `toString(36)`。
+  实测样例指纹 = `1kr0eu9`（node 独立复算一致）。
+- 更新弹窗（#21402）：逐段比较 `version_name`，标题「发现新版本 v…」，
+  内容 `{update_description}\n\n是否立即前往系统默认浏览器下载更新？`，
+  按钮 `立即下载` / `稍后再说` → `Linking.openURL(download_url || download_url2)`。
+
+### 2. `play_api` 播放代理开关（当前服务端关闭）
+
+- `play_api.enabled && url` 时，酷我播放地址改走 `{host}/kuwo.php?type=&rid=`：
+  - `resolvePlayHost`（#17988）：取 `^https?://[^/]+` 并去掉 `:80`；
+  - `buildPlayUrl`（#17989）：`host + '/kuwo.php?type=' + type + '&rid=' + rid`。
+- 实测服务端 `play_api.enabled=false`（`url:""`），故线上仍走酷我直连/Edge。
+- 注：`kuwo-play` 请求同时带 `&quality=`（#18010），旧实现只发了 `rid` 与 `host`。
+
+### 3. `fetchLrtsChildren`：懒人频道页（页签 + 多栏目，不经 Edge）
+
+```
+GET https://m.lrts.me/category/book?title=儿童&rootId=6&index=-2
+  headers: iPhone UA + Accept: text/html
+→ HTML 内 window.__NUXT__ = (function(a,b,...){return {...}}(...));
+  取 payload.data[0] → {title, rootId, tabList, recommendList,
+                        subTypeRecommendList, finished, tabIndex}
+```
+
+- 出处：#18087/#18088/#18090（含 1991 字节的主逻辑）、#18091 `mapChildBook`、
+  #18093 页签过滤、#18096 集合去重、#18098 子栏目循环。
+- 产出结构：`{title, tabs, recommendBooks, sections:[{label,books}], allBooks, total}`。
+- 页签过滤：丢 `!name`、`name==='推荐'|'全部'`、`id==='0'|'6'`（儿童页 16→14）。
+- 书映射：`id||entityId||baseEntityId`、`name`、`nickName||author||'未知'`、
+  `cover||originCover` 且 `http://`→`https://`、`rating` 写死 `9.5`、
+  `playCount` → `N.N万播放`；`source:'lrts'`。
+- 同一套 SSR 解析也用于 `lrts-home` 的**直连兜底**
+  （`title=有声小说&rootId=1`，#18036）。
+- 实测：儿童页 200 / 282 KB，tabList 16、recommendList 8、subTypeRecommendList 16 栏。
+
+### 4. 存储键纠错：是 `tingshu_*`，不是 `shu_*`
+
+早前文档写的 `shu_*` 前缀**是错的**（反汇编里 `shu_` 前缀 0 命中，
+命中的 67 处全是 `tingshu_` 的子串）。21 个键的完整清单（#16799 批量读取顺序）：
+
+```
+tingshu_theme / tingshu_tap_fx / tingshu_accent / tingshu_favorites /
+tingshu_history / tingshu_book_cache / tingshu_audio_quality /
+tingshu_skip_intro / tingshu_skip_outro / tingshu_audio_mixing /
+tingshu_playback_speed / tingshu_animations_enabled / tingshu_chapter_order /
+tingshu_boost_level / tingshu_volume_boost_enabled / tingshu_volume_boost_gain /
+tingshu_active_source / tingshu_sleep_stopped / lingyue_total_listened_sec_v1 /
+tingshu_favorites_backup / tingshu_history_backup
+```
+
+取值形态也一并纠正（#16823/#16829/#17021/#17023 各 setter）：
+
+| 键 | 形态 | 语义 |
+|---|---|---|
+| `tingshu_playback_speed` | 字符串数字 | `String(speed)` |
+| `tingshu_skip_intro` / `_outro` | **数字秒** | `clamp(0..180)`，**0 = 关闭** |
+| `tingshu_chapter_order` | 字符串 | `asc` / `desc` |
+| `tingshu_audio_quality` | 字符串 | `128` / `320` / `flac` |
+
+音质选项（#225xx 内联数组，逐字）：
+`{'q':'128','label':'标准','desc':'128kbps · 流畅省流量'}`、
+`{'q':'320','label':'高品','desc':'320kbps · 高清音质'}`、
+`{'q':'flac','label':'无损','desc':'FLAC · 原音无损'}`。
+
+### 5. 本轮未搬（明确留档）
+
+- `festivals`（节日主题）：服务端当前 `[]`，且主题资源是本地图标 + 渐变；
+  只在远端下发时才应展示，暂不实现（数据结构已解析保留）。
+- `announcements` 表（Supabase REST，`is_active/expires_at` 过滤）：
+  用 anon key 实测返回 `[]`（RLS），远端公告以 `remote-config` 为准。
+- `umeng` 统计、`stat_report.php` / `stat_heartbeat.php` 心跳：与功能无关，跳过。
+- 多设备同步（`lingyue_my_sync_code_v1` / `syncDeviceData` / `user_play_history`）：
+  需要登录态与写库权限，本轮只记录键名与形状。

@@ -52,6 +52,7 @@ dependencies:
   # WebView (用于执行JavaScript)
   flutter_inappwebview: ^6.0.0
   image: ^4.7.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

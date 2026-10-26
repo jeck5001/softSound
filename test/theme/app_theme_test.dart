@@ -130,11 +130,19 @@ void main() {
   });
 
   group('AudioQuality', () {
-    test('存储键与还原', () {
-      expect(AudioQuality.high.storageKey, 'high');
-      expect(AudioQuality.fromStorageKey('lossless'), AudioQuality.lossless);
+    test('存储键与还原（聆阅原值 128/320/flac）', () {
+      expect(AudioQuality.standard.storageKey, '128');
+      expect(AudioQuality.high.storageKey, '320');
+      expect(AudioQuality.lossless.storageKey, 'flac');
+      expect(AudioQuality.fromStorageKey('flac'), AudioQuality.lossless);
       expect(AudioQuality.fromStorageKey(null), AudioQuality.standard);
       expect(AudioQuality.fromStorageKey('bogus'), AudioQuality.standard);
+    });
+
+    test('旧版值可读回（向后兼容）', () {
+      expect(AudioQuality.fromStorageKey('low'), AudioQuality.standard);
+      expect(AudioQuality.fromStorageKey('high'), AudioQuality.high);
+      expect(AudioQuality.fromStorageKey('lossless'), AudioQuality.lossless);
     });
   });
 

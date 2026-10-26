@@ -70,10 +70,25 @@ void main() {
   }
 
   group('音质枚举', () {
-    test('四档音质均有唯一存储键', () {
-      final keys = AudioQuality.values.map((q) => q.storageKey).toSet();
+    test('三档音质的存储值与聆阅字节码一致（128 / 320 / flac）', () {
+      final keys = AudioQuality.values.map((q) => q.storageKey).toList();
       expect(keys, hasLength(AudioQuality.values.length));
-      expect(keys, containsAll(['low', 'standard', 'high', 'lossless']));
+      expect(keys, ['128', '320', 'flac']);
+    });
+
+    test('标签与说明逐字来自聆阅音质选项数组', () {
+      expect(AudioQuality.standard.label, '标准');
+      expect(AudioQuality.high.label, '高品');
+      expect(AudioQuality.lossless.label, '无损');
+      expect(AudioQuality.standard.description, '128kbps · 流畅省流量');
+      expect(AudioQuality.high.description, '320kbps · 高清音质');
+      expect(AudioQuality.lossless.description, 'FLAC · 原音无损');
+    });
+
+    test('旧版落盘值仍可读回（向后兼容）', () {
+      expect(AudioQuality.fromStorageKey('low'), AudioQuality.standard);
+      expect(AudioQuality.fromStorageKey('high'), AudioQuality.high);
+      expect(AudioQuality.fromStorageKey('lossless'), AudioQuality.lossless);
     });
 
     test('默认音质为标准', () {
@@ -93,15 +108,11 @@ void main() {
   });
 
   group('酷我 br 参数随音质变化', () {
-    test('low → 128kmp3', () async {
-      expect(await urlFor(AudioQuality.low), contains('br=128kmp3'));
+    test('standard(128) → 128kmp3', () async {
+      expect(await urlFor(AudioQuality.standard), contains('br=128kmp3'));
     });
 
-    test('standard → 192kmp3', () async {
-      expect(await urlFor(AudioQuality.standard), contains('br=192kmp3'));
-    });
-
-    test('high → 320kmp3', () async {
+    test('high(320) → 320kmp3', () async {
       expect(await urlFor(AudioQuality.high), contains('br=320kmp3'));
     });
 
@@ -113,12 +124,13 @@ void main() {
       expect(await urlFor(null), contains('br=320kmp3'));
     });
 
-    test('四档音质产生四种不同 URL', () async {
+    test('三档音质产生三种不同 URL', () async {
       final urls = <String>{};
       for (final q in AudioQuality.values) {
         urls.add(await urlFor(q));
       }
-      expect(urls, hasLength(4), reason: '每档音质 URL 应不同');
+      expect(urls, hasLength(AudioQuality.values.length),
+          reason: '每档音质 URL 应不同');
     });
 
     test('章节 rid 正确带入 URL', () async {

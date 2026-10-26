@@ -289,6 +289,17 @@ class AppStrings {
   static const about = '关于轻听 FM';
   static const version = '版本';
   static const checkUpdate = '检查更新';
+
+  /// 本应用版本号 —— 必须与 `pubspec.yaml` 的 `version:` 一致。
+  ///
+  /// 由 `test/theme/app_version_test.dart` 静态校验，防止再次出现
+  /// 「设置页硬编码 v1.1.7（那是聆阅的版本号）」这类漂移。
+  static const appVersion = '0.1.0';
+
+  /// 更新检查说明：下载地址来自上游发布渠道（聆阅），不是本应用的商店包。
+  static const updateUpstreamNote = '更新信息来自上游发布渠道；下载后将安装该渠道的安装包。';
+  static const updateNoLink = '该版本未提供下载地址';
+  static const announcementFallbackTitle = '公告';
   static const checkingUpdate = '正在检查新版本…';
   static const alreadyLatest = '当前已是最新版本 (v';
   static const newVersionFound = '发现新版本 v';

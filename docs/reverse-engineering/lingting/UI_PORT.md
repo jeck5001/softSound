@@ -755,3 +755,86 @@ PIL 逐点取色，再按截图复刻。新增共享组件库 `lib/theme/lingyue
 （Edge 的 duration 是粗值 600，直连是 476 等精确值）；Edge 429 时回落直连，
 保证不比以前差。测试 +6（真实 Edge 报文 fixture
 `kuwo_episodes_edge_real.json`，覆盖全量、时长修正、双路互为兜底）。
+
+### 6.33 远端配置：真「检查更新」+ 公告（2026-10-26 本轮补齐）
+
+**此前「检查更新」是假功能**：设置页副标题写死「当前已是最新版本」，
+点击只弹同一句话，从不发请求；页面底部还硬编码了 **聆阅的** 版本号 `v1.1.7`
+（本应用是 `0.1.0`）。
+
+本轮按字节码 #20358 / #21402 接上真实链路：
+
+- 新增 `lib/services/remote_config_api.dart`：
+  `POST {edge}/functions/v1/remote-config` → `{version, announcement, umeng, play_api, festivals, server_time}`；
+  429 退避重试、串行闸门、10s 超时；失败返回 `DEFAULT_CONFIG` 等价物而不是抛异常。
+- 新增 `lib/features/settings/update_dialogs.dart`：
+  更新弹窗（`发现新版本 v…` / `更新内容` / `立即下载` / `稍后再说`）与
+  公告弹窗（`不再显示`）。打开链接走 `url_launcher`（新增依赖）。
+- 新增 `lib/features/home/announcement_gate.dart`：挂在页签壳层，
+  启动拉配置 → 有公告且**指纹未读**才弹；`rc_ann_dismiss_v1` 记录已读指纹
+  （djb2 → base36，与聆阅逐字等价，实测样例 `1kr0eu9`）。
+- 设置页「检查更新」改为真实请求 + 逐段版本比较；
+  版本号统一到 `AppStrings.appVersion`，并由
+  `test/theme/app_version_test.dart` 与 `pubspec.yaml` 互锁（防再漂移）。
+
+> 诚实记录：远端下发的是**上游渠道（聆阅）**的版本与下载地址。
+> 弹窗里明确写了「更新信息来自上游发布渠道」，
+> 不假装这是本应用的商店更新。
+
+### 6.34 懒人「频道页」：页签 + 多栏目（2026-10-26 本轮补齐）
+
+发现页源2 的大类卡此前只进「分页书籍列表」。聆阅的 `channels/[categoryId]`
+是**分类首页**：一次请求拿到「子类页签 + 听友推荐 + 各子类栏目」。
+
+- 新增 `lib/services/nuxt_payload.dart`：**纯 Dart 的 Nuxt SSR 解码器**。
+  `window.__NUXT__` 不是 JSON，而是
+  `(function(a,b,…){return {…}}(0,"",1,…))` —— 参数名替换了重复字面量。
+  解码器先解形参/实参建环境，再对返回字面量做递归下降求值
+  （支持嵌套对象/数组/字符串转义/数字/布尔/null/`void 0`/`!0`）。
+  **不 eval、不执行页面脚本**。
+- 新增 `lib/services/lrts_children_api.dart`（#18090 契约）：
+  `GET https://m.lrts.me/category/book?title=&rootId=&index=-2`（iPhone UA）
+  → `{title, tabs(14), recommendBooks, sections, allBooks}`；
+  页签过滤与 `mapChildBook` 字段映射逐条照搬字节码。
+  这条链路**不经 Edge**，因此不受 429 限流影响。
+- 新增 `lib/features/explore/lrts_channel_page.dart` + 路由 `/lrts-channel/:rootId`；
+  发现页源2 大类卡改为进频道页，子类 chip 仍进分页列表页。
+
+### 6.35 存储键纠错与音质选项对齐（2026-10-26 本轮补齐）
+
+字节码复核发现早前文档写的 `shu_*` 前缀是错的（反汇编里 `shu_` 0 命中）：
+
+| 项 | 旧实现（错） | 现在（字节码逐字） |
+|---|---|---|
+| 前缀 | `shu_` | `tingshu_` |
+| 跳片头 | `shu_skip_intro`(bool) + `shu_skip_intro_seconds` | `tingshu_skip_intro`(**秒**，0=关，clamp 0..180) |
+| 跳片尾 | 同上 | `tingshu_skip_outro`(秒) |
+| 章节顺序 | `shu_chapter_order_play`(bool) | `tingshu_chapter_order`(`asc`/`desc`) |
+| 倍速 | `setDouble` | `setString('$speed')` |
+| 音质 | `low/standard/high/lossless` 四档 | `128`/`320`/`flac` 三档（标准/高品/无损） |
+
+- 旧值仍可读回（`low→标准`、`lossless→无损`），不会丢用户设置。
+- 酷我 `br` 映射同步收敛：标准→`128kmp3`、高品→`320kmp3`、无损→`2000kflac`。
+
+### 6.36 本轮验证（2026-10-26）
+
+```
+$ flutter analyze   →  No issues found!
+$ flutter test      →  All tests passed（443 个；上一轮 390 + 本轮新增 53）
+```
+
+新增测试：
+
+- `test/services/lrts_children_api_test.dart`（13）—— 用**真实抓取**的儿童频道页
+  （`lrts_children_real.html`，82 KB）验证 NUXT 解码、页签过滤、栏目/去重、
+  字段映射、畸形容错、URL/UA 契约。
+- `test/services/remote_config_api_test.dart`（21）—— 用**真实响应**
+  （`remote_config_real.json`）验证版本/公告/play_api 解析、逐段版本比较、
+  DEFAULT_CONFIG 兜底、公告指纹与 JS 实现一致、`buildPlayUrl` 拼接。
+- `test/features/settings/update_dialogs_test.dart`（14）—— 更新/公告弹窗文案与按钮、
+  注入 opener 断言「点立即更新才打开链接」、`rc_ann_dismiss_v1` 指纹持久化、
+  `AnnouncementGate` 三态（无公告 / 未读弹 / 已读不弹）。
+- `test/features/explore/lrts_channel_page_test.dart`（3）—— 真实数据渲染页签/栏目/书卡、
+  空态占位。
+- `test/theme/app_version_test.dart`（2）—— 版本常量与 `pubspec.yaml` 互锁、
+  设置页不得再出现聆阅版本号。

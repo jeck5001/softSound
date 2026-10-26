@@ -115,7 +115,9 @@ class ExplorePage extends ConsumerWidget {
     return [
       for (final p in source2Categories)
         (
-          route: '/lrts-category/${p.lrtsId}'
+          // 大类卡进「频道页」（页签 + 多栏目，字节码 #18090 契约）；
+          // 子类 chip 仍进分页列表页（lrts-category）。
+          route: '/lrts-channel/${p.lrtsId}'
               '?name=${Uri.encodeComponent(p.name)}',
           name: p.name,
           desc: p.desc,
