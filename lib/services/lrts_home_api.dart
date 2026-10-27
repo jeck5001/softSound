@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'edge_gate.dart';
+import 'lrts_children_api.dart' show LrtsChildrenApi;
+import 'nuxt_payload.dart';
 
 /// 聆阅首页推荐流契约（2026-10-16 字节码 #18036 挖掘 + 实测）。
 ///
@@ -75,8 +77,97 @@ class LrtsHomeApi {
           // 重试
         }
       }
-      return const LrtsHomeData.empty();
+      // Edge 全挂（典型是 429 限流）：走聆阅自己的直连兜底（#18036）。
+      final direct = await fetchDirect();
+      return direct ?? const LrtsHomeData.empty();
     });
+  }
+
+  /// 直连兜底：抓 `m.lrts.me/category/book?title=有声小说&rootId=1&index=-2`
+  /// 的 Nuxt SSR 页面，映射成与 Edge 响应相同的 `{books, sections}`。
+  ///
+  /// 字节码 #18036 在 Edge 失败后正是这么做的（同一段 NUXT 解析代码），
+  /// 好处是**完全不经 Edge**，因此不受项目级并发配额影响。
+  /// 失败返回 `null`（调用方按「无数据」处理）。
+  Future<LrtsHomeData?> fetchDirect() async {
+    try {
+      final r = await _dio.get<String>(
+        'https://m.lrts.me/category/book'
+        '?title=${Uri.encodeComponent('有声小说')}&rootId=1&index=-2',
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (c) => c != null && c < 500,
+          headers: const {
+            'User-Agent': LrtsChildrenApi.userAgent,
+            'Accept':
+                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          receiveTimeout: timeout,
+          sendTimeout: timeout,
+        ),
+      );
+      final html = r.data;
+      if (html == null || html.isEmpty) return null;
+      return parseDirectHtml(html);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 解析直连页（独立方法便于 fixture 单测）。
+  ///
+  /// 与字节码 #18036 一致：
+  /// `recommendList` → 首栏「听友推荐」，`subTypeRecommendList[].list` → 各栏目；
+  /// `books` 取推荐列表（首页「精选」用它）。
+  LrtsHomeData? parseDirectHtml(String html) {
+    final data = NuxtPayload.tryParse(html)?.pageData;
+    if (data == null) return null;
+
+    final recommend = <LrtsHomeBook>[];
+    final rawRecommend = data['recommendList'];
+    if (rawRecommend is List) {
+      for (final b in rawRecommend) {
+        final mapped = LrtsChildrenApi.mapBook(
+          b,
+          category: '听友推荐',
+          fallbackRating: 9.5,
+          useScore: true,
+        );
+        if (mapped != null) recommend.add(mapped);
+      }
+    }
+
+    final sections = <LrtsHomeSection>[];
+    if (recommend.isNotEmpty) {
+      sections.add(LrtsHomeSection(label: '听友推荐', books: recommend));
+    }
+
+    final rawSubs = data['subTypeRecommendList'];
+    if (rawSubs is List) {
+      for (final s in rawSubs) {
+        if (s is! Map) continue;
+        final label = LrtsChildrenApi.asString(s['name']).trim();
+        final list = s['list'];
+        if (list is! List) continue;
+        final books = <LrtsHomeBook>[];
+        for (final b in list) {
+          final mapped = LrtsChildrenApi.mapBook(
+            b,
+            category: label.isEmpty ? '推荐' : label,
+            fallbackRating: 9.5,
+            useScore: true,
+          );
+          if (mapped != null) books.add(mapped);
+        }
+        if (books.isEmpty) continue;
+        sections.add(
+          LrtsHomeSection(label: label.isEmpty ? '推荐' : label, books: books),
+        );
+      }
+    }
+
+    if (sections.isEmpty) return null;
+    return LrtsHomeData(books: recommend, sections: sections);
   }
 
   /// 解析（独立方法便于 fixture 单测）。
@@ -115,7 +206,9 @@ class LrtsHomeApi {
             rating: b['rating'] is num ? (b['rating'] as num).toDouble() : null,
             listeners: '${b['listeners'] ?? ''}',
             description: '${b['description'] ?? ''}',
-            category: (b['categories'] is List && (b['categories'] as List).isNotEmpty)
+            category:
+                (b['categories'] is List &&
+                    (b['categories'] as List).isNotEmpty)
                 ? '${(b['categories'] as List).first}'
                 : '',
           ),
@@ -169,4 +262,5 @@ class LrtsHomeBook {
 
 /// 首页数据 Provider（app 生命周期内缓存）。
 final lrtsHomeProvider = FutureProvider<LrtsHomeData>(
-    (ref) => LrtsHomeApi().fetchHome());
+  (ref) => LrtsHomeApi().fetchHome(),
+);

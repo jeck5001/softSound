@@ -8,6 +8,8 @@ import 'package:soft_sound/services/lrts_home_api.dart';
 void main() {
   final api = LrtsHomeApi();
 
+  group('直连兜底', _directFallbackTests);
+
   group('parseHome（真实报文）', () {
     late LrtsHomeData data;
 
@@ -19,8 +21,10 @@ void main() {
     test('top books 与 sections 结构完整', () {
       expect(data.books, isNotEmpty);
       expect(data.sections, isNotEmpty);
-      expect(data.sections.map((s) => s.label),
-          containsAll(['听友推荐', '都市传说', '玄幻奇幻']));
+      expect(
+        data.sections.map((s) => s.label),
+        containsAll(['听友推荐', '都市传说', '玄幻奇幻']),
+      );
       for (final s in data.sections) {
         expect(s.books, isNotEmpty, reason: '栏目 ${s.label} 无书');
       }
@@ -41,22 +45,69 @@ void main() {
     });
 
     test('sections 缺 books 时该栏目为空但不影响其他', () {
-      final d = api.parseHome(jsonEncode({
-        'books': [
-          {'id': '1', 'title': 'x'}
-        ],
-        'sections': [
-          {'label': '空栏'},
-          {
-            'label': '有书',
-            'books': [
-              {'id': '2', 'title': 'y'}
-            ]
-          },
-        ],
-      }));
+      final d = api.parseHome(
+        jsonEncode({
+          'books': [
+            {'id': '1', 'title': 'x'},
+          ],
+          'sections': [
+            {'label': '空栏'},
+            {
+              'label': '有书',
+              'books': [
+                {'id': '2', 'title': 'y'},
+              ],
+            },
+          ],
+        }),
+      );
       expect(d.sections.first.books, isEmpty);
       expect(d.sections.last.books, hasLength(1));
     });
+  });
+}
+
+/// 直连兜底（字节码 #18036：Edge 失败后抓 Nuxt SSR）。
+void _directFallbackTests() {
+  final api = LrtsHomeApi();
+  late LrtsHomeData? data;
+
+  setUpAll(() {
+    final html = File(
+      'test/fixtures/lrts_home_direct_real.html',
+    ).readAsStringSync();
+    data = api.parseDirectHtml(html);
+  });
+
+  test('直连页可解析出栏目（有声小说 rootId=1，真实抓取）', () {
+    final d = data;
+    expect(d, isNotNull);
+    expect(d!.sections, isNotEmpty);
+    expect(d.sections.first.label, '听友推荐');
+    expect(d.sections.first.books, isNotEmpty);
+    // 首栏第一本：真实页面里的《大唐明月》
+    expect(d.sections.first.books.first.title, contains('大唐明月'));
+  });
+
+  test('栏目覆盖子类（玄幻奇幻/都市传说等）', () {
+    final labels = data!.sections.map((s) => s.label).toList();
+    expect(labels, containsAll(['玄幻奇幻', '都市传说']));
+    for (final s in data!.sections) {
+      expect(s.books, isNotEmpty, reason: '栏目 ${s.label} 无书');
+    }
+  });
+
+  test('书字段完整（封面 https / 播放量格式化）', () {
+    final b = data!.sections.first.books.first;
+    expect(b.id, isNotEmpty);
+    expect(b.title, isNotEmpty);
+    expect(b.cover, startsWith('https://'));
+    expect(b.rating, isNotNull);
+    expect(b.listeners, anyOf(isEmpty, contains('播放')));
+  });
+
+  test('畸形 HTML → null（调用方按无数据处理）', () {
+    expect(api.parseDirectHtml('<html></html>'), isNull);
+    expect(api.parseDirectHtml(''), isNull);
   });
 }

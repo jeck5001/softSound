@@ -459,3 +459,25 @@ Edge 后端（秒搭托管的 Supabase）在高峰持续返回
 - 多设备同步（`lingyue_my_sync_code_v1`、`syncDeviceData`、`user_play_history`）：
   需登录态与写库权限。
 - `umeng` 统计与 `stat_*.php` 心跳：与功能无关。
+
+---
+
+## 11. 追加轮次：2026-10-27 首页兜底与章节顺序
+
+### 11.1 `lrts-home` 直连兜底（#18036）
+
+Edge 全挂时改抓 `m.lrts.me/category/book?title=有声小说&rootId=1&index=-2`，
+与 Edge 响应同构（`sections` 首栏「听友推荐」）。实测 259 KB / 13 页签 / 14 栏目。
+该链路不经 Edge，绕开项目级并发配额 —— 首页不再因 429 空白。
+
+### 11.2 章节顺序防护（#17864 `extractChapterNumber` / #17865 `ensureChaptersAscending`）
+
+- 7 级正则级联抠集号；抽样（`max(1, len/60)`）统计相邻升降；
+- **≥70% 降序**才整表翻转，翻转后重建 index/chapterId；
+- 不做集号排序（标题含卷号/日期时会排错）。
+- 已接入酷我、懒人、JSON 规则三条路径；18 个用例覆盖边界与性能。
+
+### 11.3 已知歧义（照搬不复刻）
+
+`'音频 2024 版 66'` → 命中「被空格夹住的 2024」而不是结尾 66 —— 字节码原行为，
+测试里固化为断言。

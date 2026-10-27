@@ -121,7 +121,7 @@ class LrtsChildrenApi {
     final rawRecommend = data['recommendList'];
     if (rawRecommend is List) {
       for (final b in rawRecommend) {
-        final mapped = _mapBook(b, category: title);
+        final mapped = mapBook(b, category: title, fallbackRating: 9.5);
         if (mapped != null) recommend.add(mapped);
       }
     }
@@ -139,7 +139,11 @@ class LrtsChildrenApi {
         if (list is! List) continue;
         final books = <LrtsHomeBook>[];
         for (final b in list) {
-          final mapped = _mapBook(b, category: label.isEmpty ? title : label);
+          final mapped = mapBook(
+            b,
+            category: label.isEmpty ? title : label,
+            fallbackRating: 9.5,
+          );
           if (mapped != null) books.add(mapped);
         }
         if (books.isEmpty) continue;
@@ -174,7 +178,18 @@ class LrtsChildrenApi {
   }
 
   /// 字节码 #18091 `mapChildBook` 的逐条等价实现。
-  LrtsHomeBook? _mapBook(Object? raw, {required String category}) {
+  ///
+  /// 同时被 [LrtsHomeApi] 的直连兜底复用（同一套 SSR 书字段）。
+  ///
+  /// 评分语义分两种，别混：
+  /// - 儿童页（#18091）**写死 9.5**，不看 `score`（照搬，避免与聆阅 UI 不一致）；
+  /// - 首页直连兜底（#18036）沿用条目自身的 `score`，缺失才回落 [fallbackRating]。
+  static LrtsHomeBook? mapBook(
+    Object? raw, {
+    required String category,
+    double? fallbackRating,
+    bool useScore = false,
+  }) {
     if (raw is! Map) return null;
     final id = _firstNonEmpty([
       raw['id'],
@@ -189,22 +204,24 @@ class LrtsChildrenApi {
       cover = 'https://${cover.substring(7)}';
     }
     final author = _firstNonEmpty([raw['nickName'], raw['author']]);
+    final score = raw['score'];
     return LrtsHomeBook(
       id: id,
       title: name,
       author: author.isEmpty ? '未知' : author,
       narrator: '',
       cover: cover,
-      // 聆阅在此处写死 9.5（字节码 LoadConstDouble 9.5），照搬以免 UI 空位。
-      rating: 9.5,
-      listeners: _formatPlayCount(raw['playCount']),
+      // 儿童页：写死 9.5（字节码 LoadConstDouble 9.5）；
+      // 首页兜底：条目自带 score 优先。
+      rating: useScore && score is num ? score.toDouble() : fallbackRating,
+      listeners: formatPlayCount(raw['playCount']),
       description: _string(raw['desc']).trim(),
       category: category,
     );
   }
 
   /// `playCount` → 「303.2万播放」（聆阅文案单位在 AppStrings.unitWanPlay）。
-  static String _formatPlayCount(Object? raw) {
+  static String formatPlayCount(Object? raw) {
     final n = raw is num ? raw : num.tryParse('$raw');
     if (n == null || n <= 0) return '';
     if (n >= 100000000) {
@@ -216,7 +233,10 @@ class LrtsChildrenApi {
     return '${n.toInt()}播放';
   }
 
-  static String _string(Object? v) => v == null ? '' : '$v';
+  /// `Object?` → 非空字符串（`null` → `''`）。
+  static String asString(Object? v) => v == null ? '' : '$v';
+
+  static String _string(Object? v) => asString(v);
 
   static String _firstNonEmpty(List<Object?> candidates) {
     for (final c in candidates) {

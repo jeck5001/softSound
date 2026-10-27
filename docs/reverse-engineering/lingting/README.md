@@ -178,3 +178,35 @@ tingshu_favorites_backup / tingshu_history_backup
 - `umeng` 统计、`stat_report.php` / `stat_heartbeat.php` 心跳：与功能无关，跳过。
 - 多设备同步（`lingyue_my_sync_code_v1` / `syncDeviceData` / `user_play_history`）：
   需要登录态与写库权限，本轮只记录键名与形状。
+
+## 2026-10-27 追加（第五轮：首页直连兜底 + 章节倒序防护）
+
+### 1. `lrts-home` 的直连兜底（#18036）
+
+上一轮实现了 Nuxt SSR 解码器，本轮把它接到首页：Edge `lrts-home` 全挂
+（典型是 `429 projectConcurrencyLimitExceeded`）时，改抓
+`https://m.lrts.me/category/book?title=有声小说&rootId=1&index=-2`，
+用同一套 NUXT 解析映射成相同的 `{books, sections}`。
+
+- 字节码 #18036 里 Edge 失败后正是这么做的（同一段 NUXT 代码，标题/rootId 写死）。
+- 实测：页面 200 / 259 KB，13 个页签、14 个栏目、每栏 8 本书。
+- 这条链路**完全不经过 Edge**，因此首页不再受项目级并发配额影响。
+
+### 2. 章节顺序防护（#17864 / #17865）
+
+`extractChapterNumber`（420 B）+ `ensureChaptersAscending`（396 B）是两个
+容易被忽略但很实用的工具：上游（酷我 `albuminfo`、Edge `kuwo-episodes`、
+懒人分页、自建 JSON 规则）都**偶发倒序**返回章节。
+
+- `extractChapterNumber`：7 级正则级联（「第N集/章/节/回」→「N集」→
+  开头编号 → 被分隔符夹住的数字 → 结尾编号 → 前非数字后分隔符 → 最后一组数字）。
+- `ensureChaptersAscending`：每 `max(1, len/60)` 抽一条，相邻抽样点比较集号，
+  抽样点 <3 或总变化为 0 时不动；**降序占比 ≥ 70% 才整表翻转**。
+  不做「按集号排序」——很多标题不含集号或含的是卷号/日期，强排会打乱上游正确顺序。
+
+搬进 `lib/services/chapter_order.dart`，接到三条取章路径
+（酷我 / 懒人 / JSON 规则源），翻转后**重建 index 与 chapterId**。
+
+> 诚实记录一个歧义：`'音频 2024 版 66'` 按级联会先命中「被空格夹住的 2024」，
+> 而不是结尾的 66。这是字节码原行为，测试里明确写成了断言，
+> 没有为了「看起来更聪明」而分叉。

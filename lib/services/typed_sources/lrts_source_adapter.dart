@@ -7,6 +7,8 @@ import '../../data/models/book.dart';
 import '../../data/models/chapter.dart';
 import '../../data/models/source_rule.dart';
 import '../../theme/playback_settings.dart';
+import '../chapter_order.dart';
+import 'source_utils.dart';
 import 'typed_source_adapter.dart';
 
 /// 懒人听书（lrts）适配器。
@@ -101,8 +103,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     final seen = <String>{};
     final merged = <Book>[];
     for (var page = 1; page <= 2; page++) {
-      final body =
-          await _fnGet('/lrts-search?name=$encoded&page=$page');
+      final body = await _fnGet('/lrts-search?name=$encoded&page=$page');
       if (body == null) break;
       try {
         final json = jsonDecode(body) as Map<String, dynamic>;
@@ -215,11 +216,9 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
   /// 注意：榜单页只给 id，不含书名等元数据；
   /// 因此这里返回**占位 Book**（name 用 id），详情需再调 [getBookDetail]。
   List<Book> parseRankList(SourceRule source, String html) {
-    final ids = RegExp(r'/book/(\d{5,})')
-        .allMatches(html)
-        .map((m) => m.group(1)!)
-        .toSet()
-        .toList();
+    final ids = RegExp(
+      r'/book/(\d{5,})',
+    ).allMatches(html).map((m) => m.group(1)!).toSet().toList();
     return [
       for (final id in ids)
         Book(
@@ -311,7 +310,25 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       final sections = json['sections'];
       if (sections is int && all.length >= sections) break;
     }
-    return all;
+    return _normalizeOrder(all);
+  }
+
+  /// 章节顺序兜底（聆阅 #17865 `ensureChaptersAscending`）：
+  /// 上游若明显倒序（≥70% 相邻集号递减）则整表翻转并重建索引。
+  List<Chapter> _normalizeOrder(List<Chapter> chapters) {
+    if (chapters.length <= 1) return chapters;
+    if (!looksReversed(chapters, (c) => c.name)) return chapters;
+    _logger.i('lrts 章节疑似倒序，已按聆阅 #17865 规则翻转（${chapters.length} 章）');
+    return [
+      for (var i = 0; i < chapters.length; i++)
+        chapters[chapters.length - 1 - i].copyWith(
+          index: i,
+          chapterId: SourceUtils.chapterId(
+            chapters[chapters.length - 1 - i].bookId,
+            i,
+          ),
+        ),
+    ];
   }
 
   /// 翻页上限（防死循环；4610 章 ≈ 77 页，取 120 留裕量）。
@@ -348,17 +365,19 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       final path = _str(item['path']);
       final audioUrl = (path != null && path.isNotEmpty) ? path : null;
 
-      chapters.add(Chapter(
-        chapterId: token,
-        bookId: book.bookId,
-        index: sectionIndex - 1, // 对外索引从 0 开始
-        name: name,
-        // url 承载章节 token，供后续换取音频地址
-        url: token,
-        audioUrl: audioUrl,
-        duration: _int(item['length']),
-        isVip: isVip,
-      ));
+      chapters.add(
+        Chapter(
+          chapterId: token,
+          bookId: book.bookId,
+          index: sectionIndex - 1, // 对外索引从 0 开始
+          name: name,
+          // url 承载章节 token，供后续换取音频地址
+          url: token,
+          audioUrl: audioUrl,
+          duration: _int(item['length']),
+          isVip: isVip,
+        ),
+      );
     }
 
     return chapters;
@@ -370,8 +389,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     SourceRule source,
     Chapter chapter, {
     AudioQuality? quality,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<String?> getAudioUrl(

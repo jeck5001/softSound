@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -13,6 +12,7 @@ import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import 'js_executor.dart';
 import 'huanting_captcha_handler.dart';
+import 'chapter_order.dart';
 import 'typed_sources/typed_source_registry.dart';
 
 /// 书源解析服务
@@ -34,13 +34,16 @@ class SourceParser {
 
     try {
       String? response;
-      
+
       // 幻听网需要特殊处理验证码
       if (source.sourceId == 'huanting') {
         _logger.d('Using HuantingCaptchaHandler for search');
         response = await _huantingHandler.search(keyword, source.header);
       } else {
-        final searchUrlPath = source.search.url.replaceAll('{{keyword}}', Uri.encodeComponent(keyword));
+        final searchUrlPath = source.search.url.replaceAll(
+          '{{keyword}}',
+          Uri.encodeComponent(keyword),
+        );
         final searchUrl = _buildUrl(source.sourceUrl, searchUrlPath);
         if (searchUrl == null) return [];
 
@@ -67,26 +70,31 @@ class SourceParser {
 
             if (name == null || url == null) continue;
 
-            // For JSON sources like NetEase, the URL might be an ID. 
-            // We can store it as detailUrl. 
+            // For JSON sources like NetEase, the URL might be an ID.
+            // We can store it as detailUrl.
             // If skipDetail is true, this URL (ID) is used directly for chapter/audio.
             final bookId = _generateBookId(source.sourceId, url);
 
-            books.add(Book(
-              bookId: bookId,
-              sourceId: source.sourceId,
-              name: name,
-              author: _parseJsonRule(element, source.search.author),
-              narrator: _parseJsonRule(element, source.search.narrator),
-              coverUrl: _parseJsonRule(element, source.search.cover), // Usually direct URL in JSON
-              intro: _parseJsonRule(element, source.search.intro),
-              detailUrl: url, // Store original ID/URL
-            ));
+            books.add(
+              Book(
+                bookId: bookId,
+                sourceId: source.sourceId,
+                name: name,
+                author: _parseJsonRule(element, source.search.author),
+                narrator: _parseJsonRule(element, source.search.narrator),
+                coverUrl: _parseJsonRule(
+                  element,
+                  source.search.cover,
+                ), // Usually direct URL in JSON
+                intro: _parseJsonRule(element, source.search.intro),
+                detailUrl: url, // Store original ID/URL
+              ),
+            );
           }
           return books;
         } catch (e) {
-            _logger.e('JSON search failed', error: e);
-            return [];
+          _logger.e('JSON search failed', error: e);
+          return [];
         }
       }
 
@@ -104,16 +112,21 @@ class SourceParser {
         if (fullUrl == null) continue;
         final bookId = _generateBookId(source.sourceId, fullUrl);
 
-        books.add(Book(
-          bookId: bookId,
-          sourceId: source.sourceId,
-          name: name,
-          author: _parseRule(element, source.search.author),
-          narrator: _parseRule(element, source.search.narrator),
-          coverUrl: _buildUrl(source.sourceUrl, _parseRule(element, source.search.cover)),
-          intro: _parseRule(element, source.search.intro),
-          detailUrl: fullUrl,
-        ));
+        books.add(
+          Book(
+            bookId: bookId,
+            sourceId: source.sourceId,
+            name: name,
+            author: _parseRule(element, source.search.author),
+            narrator: _parseRule(element, source.search.narrator),
+            coverUrl: _buildUrl(
+              source.sourceUrl,
+              _parseRule(element, source.search.cover),
+            ),
+            intro: _parseRule(element, source.search.intro),
+            detailUrl: fullUrl,
+          ),
+        );
       }
 
       return books;
@@ -137,21 +150,31 @@ class SourceParser {
     }
 
     try {
-      final response = await _request(
-        book.detailUrl,
-        headers: source.header,
-      );
+      final response = await _request(book.detailUrl, headers: source.header);
 
       if (response == null) return null;
 
       final document = html_parser.parse(response);
 
       return book.copyWith(
-        name: _parseRule(document.documentElement, source.detail.bookName) ?? book.name,
-        author: _parseRule(document.documentElement, source.detail.author) ?? book.author,
-        narrator: _parseRule(document.documentElement, source.detail.narrator) ?? book.narrator,
-        coverUrl: _buildUrl(source.sourceUrl, _parseRule(document.documentElement, source.detail.cover)) ?? book.coverUrl,
-        intro: _parseRule(document.documentElement, source.detail.intro) ?? book.intro,
+        name:
+            _parseRule(document.documentElement, source.detail.bookName) ??
+            book.name,
+        author:
+            _parseRule(document.documentElement, source.detail.author) ??
+            book.author,
+        narrator:
+            _parseRule(document.documentElement, source.detail.narrator) ??
+            book.narrator,
+        coverUrl:
+            _buildUrl(
+              source.sourceUrl,
+              _parseRule(document.documentElement, source.detail.cover),
+            ) ??
+            book.coverUrl,
+        intro:
+            _parseRule(document.documentElement, source.detail.intro) ??
+            book.intro,
       );
     } catch (e) {
       _logger.e('Get book detail failed', error: e);
@@ -182,22 +205,26 @@ class SourceParser {
 
     try {
       String detailUrl = book.detailUrl;
-      if (source.detail.chapterListUrl != null && source.detail.chapterListUrl!.isNotEmpty) {
-        final chapterListUrl = _buildUrl(source.sourceUrl, source.detail.chapterListUrl!);
+      if (source.detail.chapterListUrl != null &&
+          source.detail.chapterListUrl!.isNotEmpty) {
+        final chapterListUrl = _buildUrl(
+          source.sourceUrl,
+          source.detail.chapterListUrl!,
+        );
         if (chapterListUrl != null) {
           detailUrl = chapterListUrl;
         }
       }
 
-      final response = await _request(
-        detailUrl,
-        headers: source.header,
-      );
+      final response = await _request(detailUrl, headers: source.header);
 
       if (response == null) return [];
 
       final document = html_parser.parse(response);
-      final chapterElements = _querySelectorAll(document, source.detail.chapterList);
+      final chapterElements = _querySelectorAll(
+        document,
+        source.detail.chapterList,
+      );
 
       final chapters = <Chapter>[];
       for (int i = 0; i < chapterElements.length; i++) {
@@ -211,16 +238,29 @@ class SourceParser {
         if (fullUrl == null) continue;
         final chapterId = _generateChapterId(book.bookId, i);
 
-        chapters.add(Chapter(
-          chapterId: chapterId,
-          bookId: book.bookId,
-          index: i,
-          name: name,
-          url: fullUrl,
-          isVip: _parseRule(element, source.chapter.isVip) == 'true',
-        ));
+        chapters.add(
+          Chapter(
+            chapterId: chapterId,
+            bookId: book.bookId,
+            index: i,
+            name: name,
+            url: fullUrl,
+            isVip: _parseRule(element, source.chapter.isVip) == 'true',
+          ),
+        );
       }
 
+      // 顺序兜底（聆阅 #17865）：明显倒序则翻转并重建索引。
+      if (looksReversed(chapters, (c) => c.name)) {
+        _logger.i('章节疑似倒序，已按 #17865 规则翻转（${chapters.length} 章）');
+        return [
+          for (var i = 0; i < chapters.length; i++)
+            chapters[chapters.length - 1 - i].copyWith(
+              index: i,
+              chapterId: _generateChapterId(book.bookId, i),
+            ),
+        ];
+      }
       return chapters;
     } catch (e) {
       _logger.e('Get chapter list failed', error: e);
@@ -259,16 +299,18 @@ class SourceParser {
     try {
       String? audioUrl;
 
-      final chapterFullUrl = _buildUrl(source.sourceUrl, chapter.url) ?? chapter.url;
+      final chapterFullUrl =
+          _buildUrl(source.sourceUrl, chapter.url) ?? chapter.url;
 
       // 构建请求头，支持动态Referer
-      Map<String, String> requestHeaders = {
-        ...?source.header,
-      };
+      Map<String, String> requestHeaders = {...?source.header};
       if (source.audio.header != null) {
         source.audio.header!.forEach((key, value) {
           if (value.contains('{{chapterUrl}}')) {
-            requestHeaders[key] = value.replaceAll('{{chapterUrl}}', chapterFullUrl);
+            requestHeaders[key] = value.replaceAll(
+              '{{chapterUrl}}',
+              chapterFullUrl,
+            );
           } else {
             requestHeaders[key] = value;
           }
@@ -276,19 +318,21 @@ class SourceParser {
       }
 
       String requestUrl = chapterFullUrl;
-      
+
       // 当 audioUrl 规则是 'api' 时，需要先请求章节页面获取 meta 参数
       // 所以不要将 requestUrl 替换为 API URL
       final audioRule = source.audio.audioUrl;
-      if (audioRule != 'api' && source.audio.apiUrl != null && source.audio.apiUrl!.isNotEmpty) {
+      if (audioRule != 'api' &&
+          source.audio.apiUrl != null &&
+          source.audio.apiUrl!.isNotEmpty) {
         String apiUrl = source.audio.apiUrl!;
         if (apiUrl.contains('{{bookId}}')) {
-             apiUrl = apiUrl.replaceAll('{{bookId}}', chapter.url);
+          apiUrl = apiUrl.replaceAll('{{bookId}}', chapter.url);
         }
         requestUrl = _buildUrl(source.sourceUrl, apiUrl) ?? requestUrl;
 
         // 对于iframe类型的API（如幻听网的PTaudio2.php），使用章节URL作为Referer
-        if (!requestHeaders.containsKey('Referer') || 
+        if (!requestHeaders.containsKey('Referer') ||
             requestHeaders['Referer'] == source.sourceUrl ||
             requestHeaders['Referer'] == '${source.sourceUrl}/') {
           requestHeaders['Referer'] = chapterFullUrl;
@@ -298,31 +342,29 @@ class SourceParser {
       // Check if we need WebView for JS-based audio extraction
       if (source.audio.audioUrl.startsWith('js:')) {
         // Will be handled below in the main audioUrl extraction
-      } else if (source.audio.apiUrl != null && source.audio.apiResponseRule != null && source.audio.apiResponseRule!.startsWith('js:')) {
-         // Only use WebView if the response rule explicitly requires JS execution
-         _logger.d('Using WebView for JS-based API response rule');
-         audioUrl = await _jsExecutor.fetchAudioUrlInWebView(
-           pageUrl: chapter.url,
-           apiEndpoint: source.audio.apiUrl!,
-           apiMethod: source.audio.apiMethod,
-           apiBody: source.audio.apiBody,
-           apiHeader: source.audio.apiHeader,
-           apiResponseRule: source.audio.apiResponseRule,
-           headers: source.header,
-         );
-         if (audioUrl != null) return _buildUrl(source.sourceUrl, audioUrl);
+      } else if (source.audio.apiUrl != null &&
+          source.audio.apiResponseRule != null &&
+          source.audio.apiResponseRule!.startsWith('js:')) {
+        // Only use WebView if the response rule explicitly requires JS execution
+        _logger.d('Using WebView for JS-based API response rule');
+        audioUrl = await _jsExecutor.fetchAudioUrlInWebView(
+          pageUrl: chapter.url,
+          apiEndpoint: source.audio.apiUrl!,
+          apiMethod: source.audio.apiMethod,
+          apiBody: source.audio.apiBody,
+          apiHeader: source.audio.apiHeader,
+          apiResponseRule: source.audio.apiResponseRule,
+          headers: source.header,
+        );
+        if (audioUrl != null) return _buildUrl(source.sourceUrl, audioUrl);
       }
 
       _logger.d('Requesting audio from: $requestUrl');
       _logger.d('With headers: $requestHeaders');
 
-      final response = await _request(
-        requestUrl,
-        headers: requestHeaders,
-      );
+      final response = await _request(requestUrl, headers: requestHeaders);
 
       if (response == null) return null;
-
 
       if (audioRule.startsWith('js:')) {
         audioUrl = await _parseJsAudioUrl(
@@ -338,29 +380,31 @@ class SourceParser {
 
       if (audioUrl == null) {
         if (source.sourceId == 'huanting') {
-          _logger.d('Huanting audio extraction failed, trying to unlock session...');
+          _logger.d(
+            'Huanting audio extraction failed, trying to unlock session...',
+          );
           final unlocked = await _huantingHandler.unlockSession(source.header);
           if (unlocked) {
             _logger.d('Session unlocked, retrying audio request...');
             if (_huantingHandler.sessionCookie != null) {
               requestHeaders['Cookie'] = _huantingHandler.sessionCookie!;
-              
+
               final retriedResponse = await _request(
                 requestUrl,
                 headers: requestHeaders,
               );
-              
+
               if (retriedResponse != null) {
-                 if (audioRule == 'api') {
-                   audioUrl = await _getAudioUrlFromApi(source, retriedResponse);
-                 } else if (!audioRule.startsWith('js:')) {
-                   audioUrl = _parseAudioUrl(retriedResponse, audioRule);
-                 }
+                if (audioRule == 'api') {
+                  audioUrl = await _getAudioUrlFromApi(source, retriedResponse);
+                } else if (!audioRule.startsWith('js:')) {
+                  audioUrl = _parseAudioUrl(retriedResponse, audioRule);
+                }
               }
             }
           }
         }
-        
+
         if (audioUrl == null) return null;
       }
 
@@ -376,13 +420,16 @@ class SourceParser {
   }
 
   /// 从动态接口获取音频地址
-  Future<String?> _getAudioUrlFromApi(SourceRule source, String pageHtml) async {
+  Future<String?> _getAudioUrlFromApi(
+    SourceRule source,
+    String pageHtml,
+  ) async {
     try {
       final document = html_parser.parse(pageHtml);
       final metaTags = document.querySelectorAll('meta');
-      
+
       final metaValues = <String, String>{};
-      
+
       // 1. 从 meta 标签提取
       for (final meta in metaTags) {
         final name = meta.attributes['name'] ?? meta.attributes['property'];
@@ -400,7 +447,12 @@ class SourceParser {
 
       // 2. 从 HTML 源码中提取变量 (针对一些直接卸载脚本里的变量)
       // 常见的模式如 var _b = "xxx"; 或 window._c = "yyy";
-      final variableRegex = RegExp(r'(?:var|window|let|const)\s+(_?[a-zA-Z0-9]+)\s*=\s*["'']([^"'']+)["'']');
+      final variableRegex = RegExp(
+        r'(?:var|window|let|const)\s+(_?[a-zA-Z0-9]+)\s*=\s*["'
+        ']([^"'
+        ']+)["'
+        ']',
+      );
       final matches = variableRegex.allMatches(pageHtml);
       for (final match in matches) {
         final key = match.group(1);
@@ -419,7 +471,7 @@ class SourceParser {
 
       if (source.audio.apiUrl == null) return null;
       String apiUrl = _buildUrl(source.sourceUrl, source.audio.apiUrl!)!;
-      
+
       String? body = source.audio.apiBody;
       _logger.d('Original API Body template: $body');
       if (body != null) {
@@ -431,7 +483,8 @@ class SourceParser {
       _logger.d('API URL: $apiUrl, body: $body');
 
       final headers = <String, String>{
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'X-Requested-With': 'XMLHttpRequest',
         'Referer': '${source.sourceUrl}/',
         ...?source.header,
@@ -461,17 +514,28 @@ class SourceParser {
         return null;
       }
 
-      _logger.d('API Response: ${apiResponse.substring(0, apiResponse.length > 200 ? 200 : apiResponse.length)}');
+      _logger.d(
+        'API Response: ${apiResponse.substring(0, apiResponse.length > 200 ? 200 : apiResponse.length)}',
+      );
 
       final responseRule = source.audio.apiResponseRule ?? 'ourl';
-      
+
       try {
         final jsonData = jsonDecode(apiResponse);
         if (jsonData is Map) {
           String? audioUrl = jsonData[responseRule]?.toString();
-          
+
           if (audioUrl == null || audioUrl.isEmpty) {
-            for (final key in ['url', 'ourl', 'plink', 'play_url', 'audioUrl', 'audio_url', 'src', 'mp3']) {
+            for (final key in [
+              'url',
+              'ourl',
+              'plink',
+              'play_url',
+              'audioUrl',
+              'audio_url',
+              'src',
+              'mp3',
+            ]) {
               final val = jsonData[key]?.toString();
               if (val != null && val.isNotEmpty) {
                 audioUrl = val;
@@ -480,7 +544,7 @@ class SourceParser {
               }
             }
           }
-          
+
           _logger.d('Extracted audio URL: $audioUrl');
           if (audioUrl != null && audioUrl.isNotEmpty) {
             return audioUrl;
@@ -535,7 +599,8 @@ class SourceParser {
         method: method,
         contentType: contentType,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           ...?headers,
         },
       );
@@ -618,13 +683,13 @@ class SourceParser {
     } else if (rule.startsWith('regex:')) {
       return _parseRegexRule(content, rule.substring(6));
     } else if (rule.startsWith('json:')) {
-       try {
-         final json = jsonDecode(content);
-         return _parseJsonRule(json, rule);
-       } catch (e) {
-         _logger.w('JSON parse failed in parseAudioUrl', error: e);
-         return null;
-       }
+      try {
+        final json = jsonDecode(content);
+        return _parseJsonRule(json, rule);
+      } catch (e) {
+        _logger.w('JSON parse failed in parseAudioUrl', error: e);
+        return null;
+      }
     } else if (rule.startsWith('js:')) {
       _logger.w('JS rules require WebView, not yet implemented');
       return null;
@@ -676,7 +741,7 @@ class SourceParser {
     if (path.startsWith('json:')) {
       path = path.substring(5);
     }
-    
+
     // If path is just $, return the root object in a list
     if (path == r'$') {
       return [json];
@@ -699,7 +764,7 @@ class SourceParser {
     if (path.startsWith('json:')) {
       path = path.substring(5);
     }
-    
+
     // If the path is just "$", return the element itself (if it's a primitive or we want to convert to string)
     if (path == r'$') {
       return element.toString();
@@ -708,11 +773,11 @@ class SourceParser {
     try {
       // If the element is a Map, we can query it
       if (element is Map || element is List) {
-         final matches = JsonPath(path).read(element);
-         if (matches.isNotEmpty) {
-           final value = matches.first.value;
-           return value?.toString();
-         }
+        final matches = JsonPath(path).read(element);
+        if (matches.isNotEmpty) {
+          final value = matches.first.value;
+          return value?.toString();
+        }
       }
       return null;
     } catch (e) {

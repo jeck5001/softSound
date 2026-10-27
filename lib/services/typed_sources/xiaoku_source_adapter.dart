@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
 import '../../data/models/book.dart';
 import '../../data/models/chapter.dart';
 import '../../data/models/source_rule.dart';
 import '../../theme/playback_settings.dart';
+import '../chapter_order.dart';
 import 'source_utils.dart';
 import 'typed_source_adapter.dart';
 
@@ -61,7 +63,9 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     final out = <Book>[];
     for (var pn = 1; pn <= 2; pn++) {
       final body = await _edgeGet(
-          '/kuwo-search?keyword=$encoded&pn=$pn&rn=20', retryOnLimit: true);
+        '/kuwo-search?keyword=$encoded&pn=$pn&rn=20',
+        retryOnLimit: true,
+      );
       if (body == null) break;
       out.addAll(parseEdgeSearchResponse(source, body));
     }
@@ -90,8 +94,8 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
               detailUrl: '${b['id']}',
               chapterCount: b['chapters'] is List
                   ? ((b['chapters'] as List).isEmpty
-                      ? null
-                      : (b['chapters'] as List).length)
+                        ? null
+                        : (b['chapters'] as List).length)
                   : int.tryParse('${b['chapters'] ?? ''}'),
             ),
       ];
@@ -148,19 +152,22 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     ]);
     final title = SourceUtils.stringValue(album, ['name', 'albumName']);
     if (id == null || title == null || !title.contains(keyword)) return null;
-    final tracks = SourceUtils.intValue(
-      album,
-      ['musiccnt', 'songTotal', 'nowTotal'],
-    );
+    final tracks = SourceUtils.intValue(album, [
+      'musiccnt',
+      'songTotal',
+      'nowTotal',
+    ]);
     if (tracks != null && tracks < 1) return null;
     return Book(
       bookId: '${source.sourceId}_$id',
       sourceId: source.sourceId,
       name: _clean(title),
-      author:
-          _trimNarrator(SourceUtils.stringValue(album, ['artist', 'artistName'])),
-      narrator:
-          _trimNarrator(SourceUtils.stringValue(album, ['artist', 'artistName'])),
+      author: _trimNarrator(
+        SourceUtils.stringValue(album, ['artist', 'artistName']),
+      ),
+      narrator: _trimNarrator(
+        SourceUtils.stringValue(album, ['artist', 'artistName']),
+      ),
       coverUrl: SourceUtils.stringValue(album, ['img', 'hts_img', 'coverImg']),
       intro: _cleanOptional(SourceUtils.stringValue(album, ['info', 'title'])),
       detailUrl: id,
@@ -193,13 +200,40 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
   @override
   Future<List<Chapter>> getChapterList(SourceRule source, Book book) async {
     final direct = await _directChapters(source, book);
-    if (direct.isNotEmpty) return direct;
+    if (direct.isNotEmpty) return _normalizeOrder(direct);
 
     final edgeBody = await _edgeGet(
       '/kuwo-episodes?albumId=${Uri.encodeComponent(book.detailUrl)}',
       retryOnLimit: true,
     );
-    return edgeBody == null ? const [] : parseEdgeEpisodes(book, edgeBody);
+    if (edgeBody == null) return const [];
+    return _normalizeOrder(parseEdgeEpisodes(book, edgeBody));
+  }
+
+  /// 仅供测试：暴露顺序规范化（生产路径在 [getChapterList] 内部调用）。
+  @visibleForTesting
+  List<Chapter> debugNormalizeOrder(List<Chapter> chapters) =>
+      _normalizeOrder(chapters);
+
+  /// 章节顺序兜底（聆阅 #17865 `ensureChaptersAscending`）：
+  /// 上游若明显倒序（≥70% 相邻集号递减）则整表翻转并重建索引。
+  ///
+  /// 酷我 `albuminfo` 与 Edge `kuwo-episodes` 都偶发倒序返回，
+  /// 不处理会导致「从最后一集开始播」。
+  List<Chapter> _normalizeOrder(List<Chapter> chapters) {
+    if (chapters.length <= 1) return chapters;
+    if (!looksReversed(chapters, (c) => c.name)) return chapters;
+    _logger.i('xiaoKu 章节疑似倒序，已按聆阅 #17865 规则翻转（${chapters.length} 章）');
+    return [
+      for (var i = 0; i < chapters.length; i++)
+        chapters[chapters.length - 1 - i].copyWith(
+          index: i,
+          chapterId: SourceUtils.chapterId(
+            chapters[chapters.length - 1 - i].bookId,
+            i,
+          ),
+        ),
+    ];
   }
 
   /// 解析 Edge `kuwo-episodes`：`{chapters:[{id,title,duration,paid}]}`。
@@ -216,15 +250,19 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
         final id = '${e['id'] ?? ''}'.trim();
         final title = '${e['title'] ?? ''}'.trim();
         if (id.isEmpty || title.isEmpty) continue;
-        out.add(Chapter(
-          chapterId: SourceUtils.chapterId(book.bookId, out.length),
-          bookId: book.bookId,
-          index: out.length,
-          name: _clean(title),
-          url: id, // = musicrid，与直连一致，getAudioUrl 直接可用
-          duration: e['duration'] is num ? (e['duration'] as num).toInt() : null,
-          isVip: e['paid'] == true,
-        ));
+        out.add(
+          Chapter(
+            chapterId: SourceUtils.chapterId(book.bookId, out.length),
+            bookId: book.bookId,
+            index: out.length,
+            name: _clean(title),
+            url: id, // = musicrid，与直连一致，getAudioUrl 直接可用
+            duration: e['duration'] is num
+                ? (e['duration'] as num).toInt()
+                : null,
+            isVip: e['paid'] == true,
+          ),
+        );
       }
       return out;
     } catch (e) {
@@ -341,8 +379,10 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     try {
       final parsed = parseAudioResponse(response);
       if (parsed == null) {
-        _logger.w('xiaoKu getAudioUrl: 解析失败 rid=${chapter.url}，响应前 200 字符: '
-            '${response.length > 200 ? response.substring(0, 200) : response}');
+        _logger.w(
+          'xiaoKu getAudioUrl: 解析失败 rid=${chapter.url}，响应前 200 字符: '
+          '${response.length > 200 ? response.substring(0, 200) : response}',
+        );
       }
       return parsed;
     } catch (e) {
@@ -430,7 +470,7 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
 
   Future<String?> _edgeGet(String path, {bool retryOnLimit = false}) async {
     try {
-      for (var attempt = 0;; attempt++) {
+      for (var attempt = 0; ; attempt++) {
         final r = await _dio.get<String>(
           '$edgeBase$path',
           options: Options(
@@ -493,12 +533,10 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     }
   }
 
-  String _clean(String value) => _decodeEntities(
-        value.replaceAll(RegExp(r'<[^>]+>'), ''),
-      ).trim();
+  String _clean(String value) =>
+      _decodeEntities(value.replaceAll(RegExp(r'<[^>]+>'), '')).trim();
 
-  String? _cleanOptional(String? value) =>
-      value == null ? null : _clean(value);
+  String? _cleanOptional(String? value) => value == null ? null : _clean(value);
 
   /// 解码常见 HTML 实体（含数字实体）。
   String _decodeEntities(String input) {
@@ -522,21 +560,18 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     });
 
     // 数字实体：&#123; 与 &#x1F600;
-    out = out.replaceAllMapped(
-      RegExp(r'&#(x?[0-9a-fA-F]+);'),
-      (m) {
-        final raw = m.group(1)!;
-        final code = raw.startsWith('x') || raw.startsWith('X')
-            ? int.tryParse(raw.substring(1), radix: 16)
-            : int.tryParse(raw);
-        if (code == null || code <= 0 || code > 0x10FFFF) return m.group(0)!;
-        try {
-          return String.fromCharCode(code);
-        } catch (_) {
-          return m.group(0)!;
-        }
-      },
-    );
+    out = out.replaceAllMapped(RegExp(r'&#(x?[0-9a-fA-F]+);'), (m) {
+      final raw = m.group(1)!;
+      final code = raw.startsWith('x') || raw.startsWith('X')
+          ? int.tryParse(raw.substring(1), radix: 16)
+          : int.tryParse(raw);
+      if (code == null || code <= 0 || code > 0x10FFFF) return m.group(0)!;
+      try {
+        return String.fromCharCode(code);
+      } catch (_) {
+        return m.group(0)!;
+      }
+    });
 
     return out;
   }

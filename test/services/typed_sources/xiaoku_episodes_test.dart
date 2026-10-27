@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -15,35 +16,39 @@ import 'package:soft_sound/services/typed_sources/xiaoku_source_adapter.dart';
 /// （完美世界 songnum=3867 → 4 页 1000/1000/1000/867 全部唯一）。
 /// edge fixture 为真实响应（完美世界 albumId=93621135，取前 8 集）。
 void main() {
+  group('章节倒序防护', _reversedGuardTests);
+
   SourceRule source() => SourceRule.fromJson({
-        'sourceId': 'xiaoKu',
-        'sourceName': '酷我',
-        'sourceUrl': 'http://search.kuwo.cn',
-        'sourceType': 'typed-audio',
-        'search': {
-          'url': 'typed',
-          'bookList': 'typed',
-          'bookName': 'typed',
-          'bookUrl': 'typed',
-        },
-        'detail': {'chapterList': 'typed'},
-        'chapter': {'chapterName': 'typed', 'chapterUrl': 'typed'},
-        'audio': {'audioUrl': 'typed'},
-      });
+    'sourceId': 'xiaoKu',
+    'sourceName': '酷我',
+    'sourceUrl': 'http://search.kuwo.cn',
+    'sourceType': 'typed-audio',
+    'search': {
+      'url': 'typed',
+      'bookList': 'typed',
+      'bookName': 'typed',
+      'bookUrl': 'typed',
+    },
+    'detail': {'chapterList': 'typed'},
+    'chapter': {'chapterName': 'typed', 'chapterUrl': 'typed'},
+    'audio': {'audioUrl': 'typed'},
+  });
 
   Book book() => Book(
-        bookId: 'xiaoKu_93621135',
-        sourceId: 'xiaoKu',
-        name: '完美世界',
-        detailUrl: '93621135',
-      );
+    bookId: 'xiaoKu_93621135',
+    sourceId: 'xiaoKu',
+    name: '完美世界',
+    detailUrl: '93621135',
+  );
 
-  final edgeBody = File('test/fixtures/kuwo_episodes_edge_real.json')
-      .readAsStringSync();
+  final edgeBody = File(
+    'test/fixtures/kuwo_episodes_edge_real.json',
+  ).readAsStringSync();
 
   // 直连 albuminfo 形态（单引号 Python dict，与真实报文同构）；
   // musicrid 与 edge 前两集重叠，duration 为精确值。
-  final directBody = "{'songnum':'8','musiclist':["
+  final directBody =
+      "{'songnum':'8','musiclist':["
       "{'musicrid':'579866300','name':'完美世界 第1集 大荒；朝气蓬勃','duration':'476'},"
       "{'musicrid':'579901688','name':'完美世界 第2集 山宝','duration':'500'}"
       "]}";
@@ -63,8 +68,10 @@ void main() {
     test('paid → isVip（真实报文均免费）', () {
       final chs = a.parseEdgeEpisodes(book(), edgeBody);
       expect(chs.every((c) => !c.isVip), isTrue);
-      final paid = a.parseEdgeEpisodes(book(),
-          '{"chapters":[{"id":"1","title":"t","duration":600,"paid":true}]}');
+      final paid = a.parseEdgeEpisodes(
+        book(),
+        '{"chapters":[{"id":"1","title":"t","duration":600,"paid":true}]}',
+      );
       expect(paid.single.isVip, isTrue);
     });
 
@@ -97,22 +104,31 @@ void main() {
 
       final chs = await a.getChapterList(source(), book());
 
-      expect(chs, hasLength(total),
-          reason: '必须翻页取全量；旧实现只发一页 pn=0&rn=600，把大书截断成 600 集');
+      expect(
+        chs,
+        hasLength(total),
+        reason: '必须翻页取全量；旧实现只发一页 pn=0&rn=600，把大书截断成 600 集',
+      );
       expect(pages, equals([0, 1]), reason: 'pn 为 0 基页号，逐页递增到取满 songnum');
-      expect(sizes.every((rn) => rn > 600), isTrue,
-          reason: '单页条数必须突破旧的 600（实测上游上限 2000）');
-      expect(chs.map((c) => c.index).toList(),
-          equals(List.generate(total, (i) => i)),
-          reason: '跨页 index 必须连续，否则目录区间与批量下载会错位');
+      expect(
+        sizes.every((rn) => rn > 600),
+        isTrue,
+        reason: '单页条数必须突破旧的 600（实测上游上限 2000）',
+      );
+      expect(
+        chs.map((c) => c.index).toList(),
+        equals(List.generate(total, (i) => i)),
+        reason: '跨页 index 必须连续，否则目录区间与批量下载会错位',
+      );
       expect(chs.map((c) => c.chapterId).toSet(), hasLength(total));
-      expect(chs.map((c) => c.url).toSet(), hasLength(total),
-          reason: '跨页不得重复或漏集');
-      expect(chs.first.duration, 401,
-          reason: '时长取直连精确值，不是 Edge 的粗值 600');
+      expect(
+        chs.map((c) => c.url).toSet(),
+        hasLength(total),
+        reason: '跨页不得重复或漏集',
+      );
+      expect(chs.first.duration, 401, reason: '时长取直连精确值，不是 Edge 的粗值 600');
       expect(chs.last.name, contains('第1250集'));
-      expect(edgeHits, 0,
-          reason: '直连成功就不该再打 Edge（常被限流，且 paid 不可信）');
+      expect(edgeHits, 0, reason: '直连成功就不该再打 Edge（常被限流，且 paid 不可信）');
     });
 
     test('末页判定：本页不足 rn 即停止翻页', () async {
@@ -144,8 +160,7 @@ void main() {
 
       final chs = await a.getChapterList(source(), book());
 
-      expect(chs, hasLength(1000),
-          reason: '第二页挂了也要把第一页给用户，剩下一部分目录仍可用');
+      expect(chs, hasLength(1000), reason: '第二页挂了也要把第一页给用户，剩下一部分目录仍可用');
       expect(chs.first.index, 0);
       expect(chs.last.index, 999);
     });
@@ -198,7 +213,7 @@ String _directPage({required int total, required int pn, required int rn}) {
     for (var i = 0; i < n; i++)
       "{'musicrid':'${900000 + start + i + 1}',"
           "'name':'夜无疆 第${start + i + 1}集 剧情',"
-          "'duration':'${400 + start + i + 1}'}"
+          "'duration':'${400 + start + i + 1}'}",
   ].join(',');
   return "{'songnum':'$total','musiclist':[$items]}";
 }
@@ -212,17 +227,61 @@ class _StubAdapter implements HttpClientAdapter {
     RequestOptions options,
     Stream<List<int>>? requestStream,
     Future<void>? cancelFuture,
-  ) async =>
-      onFetch(options);
+  ) async => onFetch(options);
 
   @override
   void close({bool force = false}) {}
 }
 
 ResponseBody _resp(String body, [int status = 200]) => ResponseBody.fromString(
-      body,
-      status,
-      headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      },
+  body,
+  status,
+  headers: {
+    Headers.contentTypeHeader: [Headers.jsonContentType],
+  },
+);
+
+/// 章节倒序防护（聆阅 #17865）：Edge 偶发倒序返回时不得「从最后一集开始播」。
+void _reversedGuardTests() {
+  final adapter = XiaoKuSourceAdapter(dio: Dio());
+  Book book() => Book(
+    bookId: 'kuwo_1',
+    name: 'x',
+    author: '',
+    coverUrl: '',
+    detailUrl: '1',
+    sourceId: 'xiaoKu',
+  );
+
+  String body(Iterable<int> nums) => jsonEncode({
+    'chapters': [
+      for (final n in nums)
+        {'id': '$n', 'title': '第$n集', 'duration': 600, 'paid': false},
+    ],
+  });
+
+  test('升序返回保持原样', () {
+    final chapters = adapter.parseEdgeEpisodes(
+      book(),
+      body(List.generate(80, (i) => i + 1)),
     );
+    expect(chapters.first.name, '第1集');
+    expect(chapters.last.name, '第80集');
+  });
+
+  test('明显倒序（≥70%）被翻转并重建索引', () {
+    final raw = adapter.parseEdgeEpisodes(
+      book(),
+      body(List.generate(80, (i) => 80 - i)),
+    );
+    // 未防护时首章是「第80集」
+    expect(raw.first.name, '第80集');
+
+    final fixed = adapter.debugNormalizeOrder(raw);
+    expect(fixed.first.name, '第1集');
+    expect(fixed.last.name, '第80集');
+    expect(fixed.first.index, 0);
+    expect(fixed.last.index, 79);
+    expect(fixed.first.chapterId, 'kuwo_1_0');
+  });
+}

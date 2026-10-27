@@ -853,3 +853,33 @@ $ flutter test      →  All tests passed（443 个；上一轮 390 + 本轮新�
 > 未接线的是 `play_api` 代理（`{host}/kuwo.php?type=&rid=`）：
 > `type` 实参在反汇编里没有稳定取值证据，只实现并单测了 URL 构造，
 > 不猜参数去改真实播放链路。
+
+### 6.38 首页直连兜底（2026-10-27 本轮补齐）
+
+首页此前只有 Edge `lrts-home` 一条路：一旦 429，整页只剩「推荐流暂不可用」。
+
+- `LrtsHomeApi` 新增 `fetchDirect()` / `parseDirectHtml()`：
+  Edge 重试耗尽后抓 `m.lrts.me/category/book?title=有声小说&rootId=1&index=-2`
+  的 Nuxt SSR，映射成同一份 `{books, sections}`（首栏「听友推荐」+ 各子栏目）。
+- 书字段映射与频道页共用 `LrtsChildrenApi.mapBook`，但**评分语义分开**：
+  儿童页照搬字节码写死的 9.5，首页兜底用条目自带 `score`。
+- 真实 fixture：`test/fixtures/lrts_home_direct_real.html`（67 KB）。
+
+### 6.39 章节倒序防护（2026-10-27 本轮补齐）
+
+用户侧症状：某些书上架后「从最后一集开始播」、进度条越播越靠前。
+
+- 新增 `lib/services/chapter_order.dart`（字节码 #17864 / #17865 等价实现）：
+  - `extractChapterNumber`：7 级正则级联抠集号；
+  - `looksReversed` / `ensureAscending`：抽样（1/60）+ **≥70% 降序**才翻转。
+- 接入三条取章路径：酷我（直连分页 + Edge episodes）、懒人（分页合并）、
+  JSON 规则源（DOM 解析后）。
+- 翻转后重建 `index` 与 `chapterId`，避免与「已听进度」错位。
+- 测试 18 例（含 70% 边界、抽样隔离、无集号不瞎排、600 章抽样性能）。
+
+### 6.40 本轮验证（2026-10-27）
+
+```
+$ flutter analyze   →  No issues found!
+$ flutter test      →  All tests passed（466 个；上一轮 444 + 本轮新增 22）
+```
