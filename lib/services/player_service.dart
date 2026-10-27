@@ -192,7 +192,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     final seq = ++_lyricSeq;
     final chapter = state.chapters[index];
     try {
-      final lrc = await _parser.getLyric(source, chapter);
+      final lrc = await _parser.getLyric(source, chapter, quality: _quality);
       // 期间切了章：丢弃迟到结果
       if (seq != _lyricSeq || state.currentChapterIndex != index) return;
       final total = _player.duration ??

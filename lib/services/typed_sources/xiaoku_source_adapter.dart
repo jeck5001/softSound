@@ -386,15 +386,24 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
   Duration lyricRetryDelay = const Duration(seconds: 8);
 
   @override
-  Future<String?> getLyric(SourceRule source, Chapter chapter) async {
+  Future<String?> getLyric(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async {
     final rid = chapter.url;
     if (rid.isEmpty) return null;
+    // 字节码 #18024 `_fetchKuwoPlayUrl(rid, quality = '128')`：
+    // quality 是**必带**参数，未指定时默认 '128'。
+    final q = (quality ?? AudioQuality.standard).storageKey;
 
     for (var attempt = 0; attempt <= lyricRetries; attempt++) {
       if (attempt > 0) {
         await Future<void>.delayed(lyricRetryDelay);
       }
-      final body = await _edgeGet('/kuwo-play?rid=${Uri.encodeComponent(rid)}&host=');
+      final body = await _edgeGet(
+        '/kuwo-play?rid=${Uri.encodeComponent(rid)}&quality=$q&host=',
+      );
       if (body == null) return null; // 网络失败不重试（_edgeGet 已记日志）
       final lyric = parseLyricResponse(body);
       if (lyric != null) return lyric;

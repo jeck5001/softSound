@@ -107,7 +107,12 @@ class XiaoLiangSourceAdapter implements TypedSourceAdapter {
 
   /// 上游无字幕接口（字节码确认 lrts/六翼/喜马拉雅等播放响应不含 lyric）。
   @override
-  Future<String?> getLyric(SourceRule source, Chapter chapter) async => null;
+  Future<String?> getLyric(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async =>
+      null;
 
   @override
   Future<String?> getAudioUrl(

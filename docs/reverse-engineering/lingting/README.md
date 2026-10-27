@@ -112,7 +112,12 @@ POST {edge}/functions/v1/remote-config      body: {}
   - `resolvePlayHost`（#17988）：取 `^https?://[^/]+` 并去掉 `:80`；
   - `buildPlayUrl`（#17989）：`host + '/kuwo.php?type=' + type + '&rid=' + rid`。
 - 实测服务端 `play_api.enabled=false`（`url:""`），故线上仍走酷我直连/Edge。
-- 注：`kuwo-play` 请求同时带 `&quality=`（#18010），旧实现只发了 `rid` 与 `host`。
+- **未接线**：`buildPlayUrl` 的 `type` 实参在反汇编里没有稳定取值证据
+  （只看到 `/kuwo.php?type=` 模板），因此只实现并单测了 URL 构造，
+  不猜测 `type` 去改真实播放链路。
+- 已接线：`kuwo-play?rid=&quality=&host=`（#18010/#18024）——
+  `quality` 是**必带**参数，未指定时字节码默认 `'128'`；
+  现在字幕请求按当前音质带 `128`/`320`/`flac`（旧实现只发了 `rid` 与 `host`）。
 
 ### 3. `fetchLrtsChildren`：懒人频道页（页签 + 多栏目，不经 Edge）
 

@@ -5,11 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soft_sound/data/models/chapter.dart';
 import 'package:soft_sound/data/models/source_rule.dart';
 import 'package:soft_sound/services/typed_sources/xiaoku_source_adapter.dart';
+import 'package:soft_sound/theme/playback_settings.dart';
 
 /// 酷我字幕链路测试。
 ///
 /// 契约来源：聆阅字节码 #18025/#18026 `fetchKuwoLyric(rid, host)` ——
-/// Edge `kuwo-play?rid=&host=` 响应 `{url, lyric, quality}`。
+/// Edge `kuwo-play?rid=&quality=&host=` 响应 `{url, lyric, quality}`。
 /// fixture `kuwo_play_real.json` 为 2026-10-16 真实响应
 /// （音频 URL 已脱敏，字幕保留前 12 行）。
 void main() {
@@ -78,9 +79,26 @@ void main() {
       expect(uri.path, endsWith('/kuwo-play'));
       expect(uri.queryParameters['rid'], '1028308');
       expect(uri.queryParameters.containsKey('host'), isTrue);
+      // 字节码 #18024：quality 必带，未指定时默认 '128'（聆阅音质落盘值）
+      expect(uri.queryParameters['quality'], '128');
       expect(captured.single.headers['apikey'], isNotNull);
       expect(captured.single.headers['Authorization'],
           startsWith('Bearer '));
+    });
+
+    test('指定音质时 quality 跟随（无损 → flac）', () async {
+      final captured = <RequestOptions>[];
+      final dio = Dio()
+        ..httpClientAdapter = _StubAdapter((o) {
+          captured.add(o);
+          return _resp(
+              File('test/fixtures/kuwo_play_real.json').readAsStringSync());
+        });
+      final a = XiaoKuSourceAdapter(dio: dio)..lyricRetryDelay = Duration.zero;
+
+      await a.getLyric(source(), chapterWith('1028308'),
+          quality: AudioQuality.lossless);
+      expect(captured.single.uri.queryParameters['quality'], 'flac');
     });
 
     test('429 限流自动重试后成功', () async {

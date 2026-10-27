@@ -232,10 +232,14 @@ class SourceParser {
   ///
   /// 契约来源：聆阅字节码 #18026/#18028 —— `kuwo-play` 响应
   /// `{url, lyric, quality}`，`lyric` 为 LRC 文本。
-  Future<String?> getLyric(SourceRule source, Chapter chapter) async {
+  Future<String?> getLyric(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async {
     final typedAdapter = typedSourceRegistry.adapterFor(source.sourceId);
     if (typedAdapter == null) return null;
-    return typedAdapter.getLyric(source, chapter);
+    return typedAdapter.getLyric(source, chapter, quality: quality);
   }
 
   /// 获取音频URL

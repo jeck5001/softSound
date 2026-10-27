@@ -21,7 +21,12 @@ class FakeAdapter implements TypedSourceAdapter {
       const [];
 
   @override
-  Future<String?> getLyric(SourceRule source, Chapter chapter) async => null;
+  Future<String?> getLyric(
+    SourceRule source,
+    Chapter chapter, {
+    AudioQuality? quality,
+  }) async =>
+      null;
 
   @override
   Future<String?> getAudioUrl(

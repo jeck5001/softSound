@@ -838,3 +838,18 @@ $ flutter test      →  All tests passed（443 个；上一轮 390 + 本轮新�
   空态占位。
 - `test/theme/app_version_test.dart`（2）—— 版本常量与 `pubspec.yaml` 互锁、
   设置页不得再出现聆阅版本号。
+
+### 6.37 字幕请求带上音质（2026-10-26 本轮补齐）
+
+字节码 #18024 `_fetchKuwoPlayUrl(rid, quality='128')` 显示 `quality` 是
+`kuwo-play` 的**必带**参数，旧实现只发了 `rid` 与 `host`（吃服务端默认值）。
+
+- `TypedSourceAdapter.getLyric` 新增可选 `AudioQuality? quality`
+  （与既有 `getAudioUrl(quality:)` 同一套语义，默认 null → 不支持的源忽略）；
+- 酷我实现按音质带 `128` / `320` / `flac`，与 `tingshu_audio_quality` 落盘值一致；
+- `PlayerNotifier` 把当前音质透传下去（`_quality` → `getLyric`），
+  切换音质后取字幕立即生效。
+
+> 未接线的是 `play_api` 代理（`{host}/kuwo.php?type=&rid=`）：
+> `type` 实参在反汇编里没有稳定取值证据，只实现并单测了 URL 构造，
+> 不猜参数去改真实播放链路。
