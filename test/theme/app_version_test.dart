@@ -34,4 +34,24 @@ void main() {
       reason: '设置页应展示本应用版本常量',
     );
   });
+
+  test('「我的」页也不再硬编码聆阅版本号', () {
+    final src = File('lib/features/profile/profile_page.dart').readAsStringSync();
+    expect(src.contains('v1.1.7'), isFalse);
+    expect(src.contains("'1.1.7'"), isFalse);
+    expect(src.contains('AppStrings.appVersion'), isTrue);
+  });
+
+  test('lib/ 下不残留聆阅版本号 1.1.7（注释除外）', () {
+    final offenders = <String>[];
+    for (final entity in Directory('lib').listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      for (final line in entity.readAsLinesSync()) {
+        final trimmed = line.trimLeft();
+        if (trimmed.startsWith('//')) continue; // 注释里提到历史问题，允许
+        if (line.contains('1.1.7')) offenders.add('${entity.path}: $line');
+      }
+    }
+    expect(offenders, isEmpty, reason: '1.1.7 是聆阅的版本号，不应出现在代码里');
+  });
 }

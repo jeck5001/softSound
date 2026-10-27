@@ -943,3 +943,25 @@ $ flutter test      →  All tests passed（466 个；上一轮 444 + 本轮新�
 
 模拟器实测：`screenshots/56_effects_settings.png`（两个开关都可点、都开）、
 `screenshots/57_tap_fx.png`（点击后 12 颗粒子从落点扩散，520ms 后自动消失）。
+
+### 6.44 后台保活引导（替掉最后一行假开关）+ 版本号收尾（2026-10-27）
+
+设置页最后一行假 UI 是「开启后台常驻」：一个灰着的**恒开**开关，点了没反应。
+聆阅的做法是「说明 + 去设置」（`bgKeepAliveNote/Step1/Step2/Note2/Note4`）。
+
+- 新增 `lib/services/system_settings_bridge.dart` + Kotlin 侧 channel
+  `soft_sound/system_settings`（在既有 `MainActivity` 里加第二个 MethodChannel）：
+  - `openAppSettings` → 应用详情页
+  - `openBatteryOptimizationSettings` → 系统「电池优化」列表页
+  - `isIgnoringBatteryOptimizations` → 是否已在白名单（API 23+）
+  - 非 Android / 原生报错一律返回 `false`/`null`，UI 退化为只给步骤说明
+- 设置页该行改为可点：弹「后台保活设置」对话框，顶部显示**真实白名单状态**
+  （已加入 / 尚未加入 / 无法判断），两个按钮直达系统页面。
+
+顺手收尾：**「我的」页底部与「关于」弹窗也还硬编码着聆阅的 `v1.1.7`**
+（上一轮只修了设置页）。现在统一到 `AppStrings.appVersion`，并加了一条
+**全 `lib/` 扫描**的守卫测试（注释除外），防止第三次漂移。
+
+模拟器实测：对话框显示「尚未加入电池优化白名单」，点「立即去开启」后
+`topResumedActivity=com.android.settings`（系统「App battery usage」页）。
+截图 `screenshots/58_keepalive_guide.png`、`59_battery_settings.png`。

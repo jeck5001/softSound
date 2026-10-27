@@ -9,6 +9,7 @@ import 'package:soft_sound/theme/playback_settings.dart';
 import 'package:soft_sound/theme/theme_controller.dart';
 
 import 'package:soft_sound/services/remote_config_api.dart';
+import 'package:soft_sound/services/system_settings_bridge.dart';
 
 import '../downloads/downloads_notifier.dart';
 import 'update_dialogs.dart';
@@ -137,13 +138,14 @@ class SettingsPage extends ConsumerWidget {
               !playback.chapterOrderAscending,
             ),
           ),
-          const SettingsTile(
+          // 后台常驻：聆阅只给文案，这里补上「真的跳到系统页面」的一步。
+          // 之前这一行是灰着的恒开开关（点了没反应），属于假 UI。
+          SettingsTile(
             icon: Icons.notifications_active_outlined,
             title: AppStrings.enableBackground,
             subtitle: AppStrings.bgKeepAliveNote3,
-            showSwitch: true,
-            switchValue: true,
-            enabled: false,
+            trailing: const Text('去设置'),
+            onTap: () => _showKeepAliveGuide(context),
           ),
 
           // ---------------------------------------------- 🔄 数据与存储
@@ -384,6 +386,80 @@ class SettingsPage extends ConsumerWidget {
       if (!context.mounted) return;
       _snack(context, AppStrings.cacheCleared);
     }
+  }
+
+  /// 后台保活引导（对应聆阅 `bgKeepAliveNote*` / `bgKeepAliveStep*` 文案）。
+  ///
+  /// 两步都做成可点按钮，直接跳到对应的系统页面 —— 只给文字的话，
+  /// 用户还得自己去翻「设置 → 应用 → 电池」，实际不会去。
+  Future<void> _showKeepAliveGuide(BuildContext context) async {
+    final bridge = SystemSettingsBridge();
+    final ignoring = await bridge.isIgnoringBatteryOptimizations();
+    if (!context.mounted) return;
+
+    final status = ignoring == null
+        ? null
+        : ignoring
+            ? '已加入电池优化白名单'
+            : '尚未加入电池优化白名单';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final c = dialogContext.appColors;
+        return AlertDialog(
+          title: const Text(AppStrings.backgroundKeepAlive),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (status != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        color: ignoring!
+                            ? const Color(0xFF15803D)
+                            : const Color(0xFFB45309),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                Text(AppStrings.bgKeepAliveNote,
+                    style: TextStyle(color: c.mutedForeground, fontSize: 13)),
+                const SizedBox(height: 12),
+                Text(AppStrings.bgKeepAliveStep1,
+                    style: TextStyle(color: c.foreground, fontSize: 14)),
+                Text(AppStrings.bgKeepAliveNote2,
+                    style: TextStyle(color: c.mutedForeground, fontSize: 12)),
+                const SizedBox(height: 8),
+                Text(AppStrings.bgKeepAliveStep2,
+                    style: TextStyle(color: c.foreground, fontSize: 14)),
+                Text(AppStrings.bgKeepAliveNote4,
+                    style: TextStyle(color: c.mutedForeground, fontSize: 12)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(AppStrings.understoodClose),
+            ),
+            TextButton(
+              onPressed: () => bridge.openAppSettings(),
+              child: const Text('应用设置'),
+            ),
+            FilledButton(
+              onPressed: () => bridge.openBatteryOptimizationSettings(),
+              child: const Text(AppStrings.enableNow),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// 检查更新（聆阅 `remote-config` 契约，2026-10-26 实测）。

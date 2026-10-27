@@ -281,7 +281,7 @@ class ProfilePage extends ConsumerWidget {
             const SizedBox(height: 20),
             Center(
               child: Text(
-                '${AppStrings.appName} · v1.1.7',
+                '${AppStrings.appName} · v${AppStrings.appVersion}',
                 style: TextStyle(color: c.mutedForeground, fontSize: 12),
               ),
             ),
@@ -304,7 +304,7 @@ class ProfilePage extends ConsumerWidget {
             SizedBox(height: 8),
             Text(AppStrings.tagline),
             SizedBox(height: 8),
-            Text('${AppStrings.version}: 1.1.7'),
+            Text('${AppStrings.version}: ${AppStrings.appVersion}'),
           ],
         ),
         actions: [

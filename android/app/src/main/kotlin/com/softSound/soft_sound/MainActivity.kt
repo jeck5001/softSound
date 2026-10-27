@@ -1,7 +1,11 @@
 package com.softSound.soft_sound
 
+import android.content.Intent
 import android.media.audiofx.LoudnessEnhancer
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -50,6 +54,63 @@ class MainActivity : FlutterActivity() {
                 "getGain" -> result.success(currentGainMb)
                 else -> result.notImplemented()
             }
+        }
+
+        // 系统设置跳转（后台保活引导）：聆阅只给文案，这里把用户送到目标页。
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SYSTEM_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openAppSettings" -> result.success(openAppSettings())
+                "openBatteryOptimizationSettings" ->
+                    result.success(openBatteryOptimizationSettings())
+                "isIgnoringBatteryOptimizations" ->
+                    result.success(isIgnoringBatteryOptimizations())
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    /** 打开本应用的系统详情页。 */
+    private fun openAppSettings(): Boolean = try {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "打开应用设置失败: ${e.message}")
+        false
+    }
+
+    /** 打开系统「电池优化」列表页（用户在此把本应用设为「不优化」）。 */
+    private fun openBatteryOptimizationSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        return try {
+            startActivity(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "打开电池优化设置失败: ${e.message}")
+            // 退化为应用详情页
+            openAppSettings()
+        }
+    }
+
+    /** 是否已在电池优化白名单（API 23+）。 */
+    private fun isIgnoringBatteryOptimizations(): Boolean? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return null
+        return try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } catch (e: Exception) {
+            Log.w(TAG, "查询电池优化白名单失败: ${e.message}")
+            null
         }
     }
 
@@ -125,6 +186,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val TAG = "LoudnessEnhancer"
         private const val CHANNEL = "soft_sound/audio_effects"
+        private const val SYSTEM_CHANNEL = "soft_sound/system_settings"
 
         /** 全局输出会话。 */
         private const val AUDIO_SESSION_GLOBAL = 0
