@@ -1,18 +1,26 @@
 package com.softSound.soft_sound
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * 承载「音量增强」的原生实现。
+ * 承载「音量增强」与「系统设置跳转」的原生实现。
+ *
+ * 继承 `AudioServiceActivity`（而非 `FlutterActivity`）是 audio_service /
+ * just_audio_background 的硬性要求：它把 Activity 的 FlutterEngine 交给
+ * 媒体服务复用，否则初始化时会报
+ * "The Activity class declared in your AndroidManifest.xml is wrong or has not
+ * provided the correct FlutterEngine"，通知栏媒体卡片也就不会出现。
  *
  * 对应聆阅的 `🔊 播放与音频 → 音量增强`：
  * 采用 Android 原生 [LoudnessEnhancer]（无需 ROOT），
@@ -23,7 +31,7 @@ import io.flutter.plugin.common.MethodChannel
  *
  * 需要 `android.permission.MODIFY_AUDIO_SETTINGS`（已在清单中声明）。
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
 
     private var loudnessEnhancer: LoudnessEnhancer? = null
 
@@ -67,6 +75,10 @@ class MainActivity : FlutterActivity() {
                     result.success(openBatteryOptimizationSettings())
                 "isIgnoringBatteryOptimizations" ->
                     result.success(isIgnoringBatteryOptimizations())
+                "hasNotificationPermission" ->
+                    result.success(hasNotificationPermission())
+                "requestNotificationPermission" ->
+                    result.success(requestNotificationPermission())
                 else -> result.notImplemented()
             }
         }
@@ -100,6 +112,30 @@ class MainActivity : FlutterActivity() {
             // 退化为应用详情页
             openAppSettings()
         }
+    }
+
+    /** 是否已获得通知权限（Android 13+ 需要运行时申请）。 */
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * 申请通知权限。
+     *
+     * 没有通知权限时，媒体通知不会出现，小米 HyperOS 的灵动岛/焦点通知
+     * 也就无从显示 —— 所以第一次播放前要主动申请。
+     *
+     * @return 当前是否已授权（false 表示已弹出系统对话框，等用户选择）。
+     */
+    private fun requestNotificationPermission(): Boolean {
+        if (hasNotificationPermission()) return true
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            NOTIFICATION_REQUEST_CODE
+        )
+        return false
     }
 
     /** 是否已在电池优化白名单（API 23+）。 */
@@ -187,6 +223,9 @@ class MainActivity : FlutterActivity() {
         private const val TAG = "LoudnessEnhancer"
         private const val CHANNEL = "soft_sound/audio_effects"
         private const val SYSTEM_CHANNEL = "soft_sound/system_settings"
+
+        /** 通知权限请求码（与 onRequestPermissionsResult 对应）。 */
+        private const val NOTIFICATION_REQUEST_CODE = 1001
 
         /** 全局输出会话。 */
         private const val AUDIO_SESSION_GLOBAL = 0

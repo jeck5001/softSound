@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 /// 系统设置跳转桥（后台保活 / 电池优化）。
@@ -31,6 +32,40 @@ class SystemSettingsBridge {
   Future<bool> openBatteryOptimizationSettings() =>
       _invoke('openBatteryOptimizationSettings');
 
+  /// 是否已获得通知权限（Android 13+ 为运行时权限）。
+  ///
+  /// 没有通知权限 → 媒体通知不显示 → 小米 HyperOS 的灵动岛/焦点通知也不出现。
+  /// 非 Android 视为 true（不适用）。
+  Future<bool> hasNotificationPermission() async {
+    if (!_isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('hasNotificationPermission') ??
+          true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// 申请通知权限。
+  ///
+  /// 返回 `true` 表示已是授权状态；`false` 表示刚弹出系统对话框
+  /// （用户选择后系统会记住，下次调用即可拿到真实状态）。
+  Future<bool> requestNotificationPermission() async {
+    if (!_isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('requestNotificationPermission') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 首次播放前调用：没授权就弹一次系统对话框。
+  Future<void> ensureNotificationPermission() async {
+    if (await hasNotificationPermission()) return;
+    await requestNotificationPermission();
+  }
+
   /// 当前是否已被系统豁免电池优化。
   ///
   /// `null` 表示无法判断（非 Android / 调用失败），UI 应给中性文案。
@@ -53,3 +88,9 @@ class SystemSettingsBridge {
     }
   }
 }
+
+
+/// 通知权限状态（设置页用来提示「通知栏播放控制」是否可用）。
+final notificationPermissionProvider = FutureProvider<bool>(
+  (ref) => SystemSettingsBridge().hasNotificationPermission(),
+);

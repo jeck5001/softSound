@@ -965,3 +965,50 @@ $ flutter test      →  All tests passed（466 个；上一轮 444 + 本轮新�
 模拟器实测：对话框显示「尚未加入电池优化白名单」，点「立即去开启」后
 `topResumedActivity=com.android.settings`（系统「App battery usage」页）。
 截图 `screenshots/58_keepalive_guide.png`、`59_battery_settings.png`。
+
+### 6.45 媒体通知 / 锁屏 / 灵动岛不显示（2026-10-27 用户真机反馈修复）
+
+**现象**：播放中下拉通知栏没有媒体卡片，小米 HyperOS 的灵动岛也不显示。
+
+**根因是整条链一环都没接上**（四处独立缺失，缺一条都不显示）：
+
+| 环节 | 缺失时的后果 | 本次修复 |
+|---|---|---|
+| `JustAudioBackground.init()` | 根本没有 MediaSession，系统无从显示 | `main()` 里初始化（含 `androidNotificationOngoing: true`） |
+| 清单里的 `AudioService` 服务 / `MediaButtonReceiver` / `FOREGROUND_SERVICE(_MEDIA_PLAYBACK)` / `WAKE_LOCK` | 服务起不来，通知无宿主 | 全部补齐 |
+| `MainActivity` 继承 `FlutterActivity` | audio_service 初始化直接抛 *"The Activity class declared in your AndroidManifest.xml is wrong or has not provided the correct FlutterEngine"* | 改为继承 `AudioServiceActivity` |
+| `AudioSource.uri` 没带 `MediaItem` | 有会话但通知只显示「未知」，无封面、灵动岛不亮 | 新增 `MediaMetadata.forChapter()` 带 title/album/artist/artUri/duration |
+
+另外两个只在 Android 13+/真机上才会咬人的点：
+
+- **`POST_NOTIFICATIONS` 运行时权限**：没授权时通知记录存在但**不展示**（`dumpsys` 能看到、用户看不到，极易误判成"代码没生效"）。
+  现在首次播放前自动申请，设置页也有一条「通知栏播放控制」显示真实授权状态，
+  拒绝过（系统不再弹）时点击直接跳应用设置页。
+- **audio_service 的断言**：`androidNotificationOngoing: true` 必须搭配
+  `androidStopForegroundOnPause: true`（默认值），否则启动即抛
+  *"The androidNotificationOngoing will make no effect with androidStopForegroundOnPause set to false"*。
+
+**实测证据**（Android 15 模拟器）：
+
+```
+$ adb shell dumpsys media_session | grep -A10 com.softSound.soft_sound
+  active=true
+  state=PlaybackState {state=PLAYING(3), position=724655, speed=1.0,
+         actions=16252879, active item id=0}
+  metadata: description=第09集_故人相见，殚精竭虑, 夙染白o，陆青烛 演播, 大唐明月|《风起霓裳》原著
+
+$ adb shell dumpsys notification | grep -A4 "NotificationRecord.*softSound"
+  channel=com.softSound.soft_sound.channel.audio
+  flags=ONGOING_EVENT|NO_CLEAR|FOREGROUND_SERVICE|NO_DISMISS  category=transport
+  android.title=第09集_故人相见，殚精竭虑
+  android.subText=大唐明月|《风起霓裳》原著
+  android.text=夙染白o，陆青烛 演播
+```
+
+下拉通知栏截图：`screenshots/60_media_notification.png`（大封面 + 章节名 + 演播 + 暂停键 + 进度）。
+首次播放弹出的系统通知权限框：`screenshots/61_notification_permission.png`。
+
+> 小米灵动岛额外条件（属系统侧，代码无法代劳）：HyperOS 需在
+> `设置 → 通知与控制中心 → 焦点通知/灵动岛` 里为「轻听」开启焦点通知；
+> 若之前拒绝过通知权限，还要在 `应用设置 → 通知` 里手动打开。
+> 这两步在设置页「通知栏播放控制」那行的副标题里已用「已授权/未授权」体现。

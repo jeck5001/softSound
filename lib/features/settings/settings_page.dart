@@ -31,6 +31,8 @@ class SettingsPage extends ConsumerWidget {
     final controller = ref.read(appearanceProvider.notifier);
     final playback = ref.watch(playbackSettingsProvider);
     final playbackCtrl = ref.read(playbackSettingsProvider.notifier);
+    final notifGranted =
+        ref.watch(notificationPermissionProvider).valueOrNull ?? true;
     final effects = ref.watch(effectsSettingsProvider);
     final effectsCtrl = ref.read(effectsSettingsProvider.notifier);
     final cacheBytes = ref.watch(cacheUsageProvider).valueOrNull ?? 0;
@@ -138,6 +140,31 @@ class SettingsPage extends ConsumerWidget {
               !playback.chapterOrderAscending,
             ),
           ),
+          // 通知权限：Android 13+ 没有它就没有媒体通知，小米灵动岛也不会亮。
+          SettingsTile(
+            icon: Icons.notifications_outlined,
+            title: '通知栏播放控制',
+            subtitle: notifGranted
+                ? '已授权 · 下拉菜单/锁屏/灵动岛可显示播放控制'
+                : '未授权 · 通知栏与灵动岛不会显示播放控制，点击开启',
+            showSwitch: true,
+            switchValue: notifGranted,
+            enabled: !notifGranted,
+            onTap: () async {
+              await SystemSettingsBridge().requestNotificationPermission();
+              if (!context.mounted) return;
+              ref.invalidate(notificationPermissionProvider);
+              final granted = await ref.read(
+                notificationPermissionProvider.future,
+              );
+              if (!context.mounted) return;
+              if (!granted) {
+                // 用户拒绝过：系统不会再弹，只能去应用设置里手动开
+                await SystemSettingsBridge().openAppSettings();
+              }
+            },
+          ),
+
           // 后台常驻：聆阅只给文案，这里补上「真的跳到系统页面」的一步。
           // 之前这一行是灰着的恒开开关（点了没反应），属于假 UI。
           SettingsTile(

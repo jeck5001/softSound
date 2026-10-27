@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 import 'app/routes.dart';
 import 'theme/app_strings.dart';
@@ -17,8 +18,29 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 媒体会话 + 通知栏/锁屏/灵动岛控制。
+  //
+  // 之前**完全没有初始化** `just_audio_background`，所以：
+  // - 下拉通知栏没有媒体卡片（没有 MediaSession，系统无从显示）；
+  // - 锁屏没有播放控制；
+  // - 小米 HyperOS 的「灵动岛 / 焦点通知」也不会出现
+  //   （它读的就是持续型媒体通知 + MediaSession 元数据）。
+  //
+  // `androidNotificationOngoing: true` 让通知保持"进行中"，
+  // 这是灵动岛/常驻媒体卡的前提。
+  // 注意：audio_service 断言 `!androidNotificationOngoing || androidStopForegroundOnPause`，
+  // 所以 `androidStopForegroundOnPause` 必须保持默认 true（暂停时退出前台，
+  // 但通知仍然留着，只是不再"进行中"）。
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.softSound.soft_sound.channel.audio',
+    androidNotificationChannelName: '轻听 · 播放控制',
+    androidNotificationChannelDescription: '显示当前章节并提供播放/暂停/上下章控制',
+    androidNotificationOngoing: true,
+  );
+
   HttpOverrides.global = MyHttpOverrides();
   runApp(
     const ProviderScope(

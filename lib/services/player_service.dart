@@ -12,7 +12,9 @@ import '../theme/app_strings.dart';
 import '../theme/playback_settings.dart';
 import '../theme/subtitle_overlay.dart';
 import 'audio_effects.dart';
+import 'media_metadata.dart';
 import 'source_parser.dart';
+import 'system_settings_bridge.dart';
 
 /// 全局播放状态
 class PlayerState {
@@ -392,6 +394,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _logger.d('保存播放进度: 章节${state.currentChapterIndex}, 位置${state.position.inSeconds}秒');
   }
 
+  /// 是否已做过一次通知权限检查（避免每次切章都碰原生侧）。
+  bool _notificationPermissionChecked = false;
+
   /// 播放指定章节
   Future<void> playChapter(int index) async {
     if (index < 0 || index >= state.chapters.length) return;
@@ -414,6 +419,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
     final chapter = state.chapters[index];
     _logger.d('Loading chapter: ${chapter.name}, URL: ${chapter.url}');
+
+    // 首次播放申请通知权限（Android 13+）：否则媒体通知不出现，
+    // 下拉菜单没有卡片，小米灵动岛也不会点亮。
+    if (!_notificationPermissionChecked) {
+      _notificationPermissionChecked = true;
+      unawaited(SystemSettingsBridge().ensureNotificationPermission());
+    }
 
     // 每章重置片尾跳过去重标记与收听增量基准。
     _outroTriggered = false;
@@ -450,10 +462,19 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _logger.d('Playing audio: $audioUrl');
       _logger.d('With headers: $headers');
 
+      // 媒体元数据：通知栏/锁屏/小米灵动岛读的就是这里的 title/album/artist/artUri。
+      // 不传 tag 的话，即使有 MediaSession 也只会显示"未知"。
+      final mediaItem = MediaMetadata.forChapter(
+        book: state.currentBook,
+        chapter: chapter,
+        audioUrl: audioUrl,
+      );
+
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(audioUrl),
           headers: headers,
+          tag: mediaItem,
         ),
       );
       
