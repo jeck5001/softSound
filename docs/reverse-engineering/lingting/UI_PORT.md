@@ -925,3 +925,21 @@ $ flutter test      →  All tests passed（466 个；上一轮 444 + 本轮新�
 模拟器实测（截图 `screenshots/54_search_hot.png`、`55_search_history.png`）：
 搜「活着」后历史出现「活着」+「清空」，且 `FlutterSharedPreferences.xml`
 里落盘为 `flutter.search_history_v1=["活着"]`（`flutter.` 前缀是插件加的）。
+
+### 6.43 动效开关 + 点击粒子特效（2026-10-27 本轮补齐）
+
+设置页里这两行此前是**禁用占位**（灰着、点了没反应），对应的聆阅键
+`tingshu_animations_enabled` / `tingshu_tap_fx` 早就在 #16799 里读到过。
+
+- 新增 `lib/theme/effects_settings.dart`：`EffectsSettingsController`
+  持久化两个键（默认：动效开、点击特效关）；
+  `tapFxActive = animationsEnabled && tapFxEnabled`
+  —— 总开关关掉时点击特效不可能生效，UI 上直接置灰，避免「开了也没用」。
+- 新增 `lib/theme/tap_fx_layer.dart`：用 `Listener` **旁路**监听指针
+  （不进手势竞技场，不抢按钮点击），在落点炸 12 颗粒子；
+  **只认真正的「点」**：位移 < 12dp 且按住 < 260ms，滑动/拖进度条不触发。
+- `main.dart`：动效关闭时把 `pageTransitionsTheme` 换成「无转场」，
+  并把 `themeAnimationDuration` 归零；`MaterialApp.builder` 挂 `TapFxLayer`。
+
+模拟器实测：`screenshots/56_effects_settings.png`（两个开关都可点、都开）、
+`screenshots/57_tap_fx.png`（点击后 12 颗粒子从落点扩散，520ms 后自动消失）。

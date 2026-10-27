@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:soft_sound/theme/app_colors.dart';
 import 'package:soft_sound/theme/app_strings.dart';
 import 'package:soft_sound/theme/app_theme.dart';
+import 'package:soft_sound/theme/effects_settings.dart';
 import 'package:soft_sound/theme/playback_settings.dart';
 import 'package:soft_sound/theme/theme_controller.dart';
 
@@ -29,6 +30,8 @@ class SettingsPage extends ConsumerWidget {
     final controller = ref.read(appearanceProvider.notifier);
     final playback = ref.watch(playbackSettingsProvider);
     final playbackCtrl = ref.read(playbackSettingsProvider.notifier);
+    final effects = ref.watch(effectsSettingsProvider);
+    final effectsCtrl = ref.read(effectsSettingsProvider.notifier);
     final cacheBytes = ref.watch(cacheUsageProvider).valueOrNull ?? 0;
     final stats = ref.watch(listenerStatsProvider).valueOrNull ??
         const ListenerStats();
@@ -62,21 +65,24 @@ class SettingsPage extends ConsumerWidget {
             onTap: () => _pickAccent(context, controller, appearance),
           ),
 
-          const SettingsTile(
+          SettingsTile(
             icon: Icons.animation_outlined,
             title: AppStrings.globalAnimations,
             subtitle: AppStrings.globalAnimationsHint,
             showSwitch: true,
-            switchValue: true,
-            enabled: false,
+            switchValue: effects.animationsEnabled,
+            onTap: () =>
+                effectsCtrl.setAnimationsEnabled(!effects.animationsEnabled),
           ),
-          const SettingsTile(
+          SettingsTile(
             icon: Icons.auto_awesome_outlined,
             title: AppStrings.tapEffect,
             subtitle: AppStrings.tapEffectHint,
             showSwitch: true,
-            switchValue: false,
-            enabled: false,
+            switchValue: effects.tapFxEnabled,
+            // 动效总开关关闭时，点击特效不可能生效 → 置灰，避免"开了也没用"
+            enabled: effects.animationsEnabled,
+            onTap: () => effectsCtrl.setTapFxEnabled(!effects.tapFxEnabled),
           ),
 
           // ---------------------------------------------- 🔊 播放与音频
