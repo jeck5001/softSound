@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../data/models/book.dart';
 import '../../data/models/source_rule.dart';
+import '../../services/search_history.dart';
 import '../../services/source_parser.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_strings.dart';
@@ -240,11 +241,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     if (searchState.results.isEmpty) {
-      return const AppEmptyState(
-        icon: Icons.search,
-        title: AppStrings.searchIdleTitle,
-        description: AppStrings.searchIdleHint,
-      );
+      return _SearchIdle(onTapKeyword: _searchKeyword);
     }
 
     final sources = ref.read(sourcesProvider);
@@ -397,7 +394,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     FocusScope.of(context).unfocus();
+    // 记录搜索历史（聆阅 `search_history_v1`），失败不影响搜索。
+    ref.read(searchHistoryProvider.notifier).record(keyword);
     ref.read(searchProvider.notifier).search(keyword);
+  }
+
+  /// 点历史/热门词直接搜索。
+  void _searchKeyword(String keyword) {
+    _searchController.text = keyword;
+    setState(() {});
+    _onSearch(keyword);
   }
 
   void _openBookDetail(Book book) {
@@ -409,5 +415,120 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     ref.read(bookDetailProvider.notifier).loadBook(book, source);
     context.push('/book/${book.bookId}');
+  }
+}
+
+/// 搜索空闲态：搜索历史 + 热门搜索（聆阅 `search_history_v1` 契约）。
+///
+/// 历史为空时只显示热门搜索，且不显示「清空」按钮 —— 没东西可清。
+class _SearchIdle extends ConsumerWidget {
+  const _SearchIdle({required this.onTapKeyword});
+
+  final void Function(String keyword) onTapKeyword;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.appColors;
+    final history = ref.watch(searchHistoryProvider);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      children: [
+        if (history.isNotEmpty) ...[
+          Row(
+            children: [
+              Icon(Icons.history, size: 18, color: c.mutedForeground),
+              const SizedBox(width: 6),
+              Text(
+                AppStrings.searchHistory,
+                style: TextStyle(
+                  color: c.foreground,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => ref.read(searchHistoryProvider.notifier).clear(),
+                child: const Text(AppStrings.clear),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final kw in history)
+                _KeywordChip(text: kw, onTap: () => onTapKeyword(kw)),
+            ],
+          ),
+          const SizedBox(height: 24),
+        ],
+        Row(
+          children: [
+            Icon(Icons.local_fire_department_outlined,
+                size: 18, color: c.mutedForeground),
+            const SizedBox(width: 6),
+            Text(
+              AppStrings.searchHot,
+              style: TextStyle(
+                color: c.foreground,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final kw in SearchHistoryStore.hotKeywords)
+              _KeywordChip(text: kw, onTap: () => onTapKeyword(kw)),
+          ],
+        ),
+        const SizedBox(height: 36),
+        Center(
+          child: Text(
+            AppStrings.searchIdleHint,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.mutedForeground, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _KeywordChip extends StatelessWidget {
+  const _KeywordChip({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: c.muted,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFE6E1F5), width: 1.2),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: c.foreground,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
   }
 }
