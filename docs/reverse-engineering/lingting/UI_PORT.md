@@ -883,3 +883,21 @@ $ flutter test      →  All tests passed（443 个；上一轮 390 + 本轮新�
 $ flutter analyze   →  No issues found!
 $ flutter test      →  All tests passed（466 个；上一轮 444 + 本轮新增 22）
 ```
+
+### 6.41 模拟器真机验证（2026-10-27）
+
+在 Android 15 模拟器（`listen_test`，1080×2400）上安装 debug 包，逐条实测本轮新增链路
+（截图存 `screenshots/5?_*.png`）：
+
+| 页面 | 结果 | 证据 |
+|---|---|---|
+| 启动公告 | ✅ 真实远端公告弹出（标题/正文/去看看/不再显示/关闭） | `screenshots/50_announcement.png` |
+| 懒人频道页（有声小说） | ✅ 5 个页签可见 + 听友推荐/都市传说/玄幻奇幻各 8 本，播放量真实（793.4万/1.3亿…） | `screenshots/51_lrts_channel.png` |
+| 页签跳转 | ✅ 点「玄幻奇幻」进分类书籍列表（书名+作者真实） | `screenshots/53_channel_tab_books.png` |
+| 检查更新 | ✅ 真实远端版本：`发现新版本 v1.1.7` + 真实更新内容 + 上游渠道说明 | `screenshots/52_check_update.png` |
+| 立即更新 | ✅ 拉起 Chrome（`topResumedActivity=com.android.chrome`），证明 `url_launcher` 与 manifest `<queries>` 配置有效 | — |
+| 设置页版本号 | ✅ 显示 `轻听 · v0.1.0`（不再是聆阅的 v1.1.7） | `screenshots/52_check_update.png` |
+
+> 备注：`检查更新` 显示的是**上游渠道**的版本与下载地址（聆阅 1.1.7），
+> 弹窗里已明确写「更新信息来自上游发布渠道；下载后将安装该渠道的安装包」，
+> 不冒充本应用的商店更新。
