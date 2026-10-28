@@ -17,23 +17,93 @@ class BookRepository {
 
   BookRepository(this._db);
 
-  /// 添加书籍到书架
+  /// 添加书籍到书架。
+  ///
+  /// 冲突目标必须是 `book_id`（业务唯一键），不能只靠主键：
+  /// `touchPlayedBook` 可能已经为这本书插了一行（inBookshelf=false），
+  /// 此时按主键做 DO UPDATE 会撞 `book_id` 唯一索引直接抛异常
+  /// —— 「先听再收藏」这条常见路径会崩。测试覆盖。
   Future<void> addToBookshelf(Book book) async {
-    await _db.into(_db.booksTable).insertOnConflictUpdate(
-      BooksTableCompanion.insert(
-        bookId: book.bookId,
-        sourceId: book.sourceId,
-        name: book.name,
+    await _db.into(_db.booksTable).insert(
+          BooksTableCompanion.insert(
+            bookId: book.bookId,
+            sourceId: book.sourceId,
+            name: book.name,
+            author: Value(book.author),
+            narrator: Value(book.narrator),
+            coverUrl: Value(book.coverUrl),
+            intro: Value(book.intro),
+            detailUrl: book.detailUrl,
+            chapterCount: Value(book.chapterCount),
+            latestChapter: Value(book.latestChapter),
+            inBookshelf: const Value(true),
+            addTime: Value(DateTime.now()),
+            updateTime: Value(book.updateTime),
+          ),
+          onConflict: DoUpdate(
+            (old) => BooksTableCompanion(
+              sourceId: Value(book.sourceId),
+              name: Value(book.name),
+              author: Value(book.author),
+              narrator: Value(book.narrator),
+              coverUrl: Value(book.coverUrl),
+              intro: Value(book.intro),
+              detailUrl: Value(book.detailUrl),
+              chapterCount: Value(book.chapterCount),
+              latestChapter: Value(book.latestChapter),
+              inBookshelf: const Value(true),
+              updateTime: Value(book.updateTime),
+            ),
+            target: [_db.booksTable.bookId],
+          ),
+        );
+  }
+
+  /// 记录「播放过的书」——**不改动书架状态**。
+  ///
+  /// 背景：此前只有点「加入书架」才会写 `books` 表，于是「听过但没收藏」的书
+  /// 在重启后查不到书名，续播功能等于失效。
+  ///
+  /// 已存在时只刷新元数据（作者/演播/封面/简介/章节数），
+  /// **保留 `inBookshelf` 与 `addTime`** —— 不能因为播放就把用户移出书架。
+  Future<void> touchPlayedBook(Book book) async {
+    final existing = await getBookById(book.bookId);
+    if (existing == null) {
+      await _db.into(_db.booksTable).insert(
+            BooksTableCompanion.insert(
+              bookId: book.bookId,
+              sourceId: book.sourceId,
+              name: book.name,
+              author: Value(book.author),
+              narrator: Value(book.narrator),
+              coverUrl: Value(book.coverUrl),
+              intro: Value(book.intro),
+              detailUrl: book.detailUrl,
+              chapterCount: Value(book.chapterCount),
+              latestChapter: Value(book.latestChapter),
+              // 只是听过，不进书架
+              inBookshelf: const Value(false),
+              addTime: Value(DateTime.now()),
+              updateTime: Value(book.updateTime),
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+      return;
+    }
+
+    await (_db.update(_db.booksTable)
+          ..where((t) => t.bookId.equals(book.bookId)))
+        .write(
+      BooksTableCompanion(
+        name: Value(book.name),
         author: Value(book.author),
         narrator: Value(book.narrator),
         coverUrl: Value(book.coverUrl),
         intro: Value(book.intro),
-        detailUrl: book.detailUrl,
+        detailUrl: Value(book.detailUrl),
         chapterCount: Value(book.chapterCount),
         latestChapter: Value(book.latestChapter),
-        inBookshelf: const Value(true),
-        addTime: Value(DateTime.now()),
-        updateTime: Value(book.updateTime),
+        updateTime: Value(book.updateTime ?? DateTime.now()),
       ),
     );
   }

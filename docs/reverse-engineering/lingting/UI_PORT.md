@@ -1012,3 +1012,44 @@ $ adb shell dumpsys notification | grep -A4 "NotificationRecord.*softSound"
 > `设置 → 通知与控制中心 → 焦点通知/灵动岛` 里为「轻听」开启焦点通知；
 > 若之前拒绝过通知权限，还要在 `应用设置 → 通知` 里手动打开。
 > 这两步在设置页「通知栏播放控制」那行的副标题里已用「已授权/未授权」体现。
+
+### 6.46 重启后「上次播放」丢失（2026-10-28 用户真机反馈修复）
+
+**现象**：退出 App 再打开，上次播放的书/章节没了，底部迷你播放条也不见。
+
+**根因不是没存，而是只写不读** —— 播放进度每 30 秒都写进了 `play_history`，
+但启动时**没有任何代码读回来**。恢复过程还踩到三个连带缺陷：
+
+| # | 缺陷 | 后果 | 修复 |
+|---|---|---|---|
+| 1 | 启动时不查历史 | 播放器永远从空状态开始 | `sessionRestorerProvider` 在 `MainScaffold.initState` 里恢复会话（**不自动起播**） |
+| 2 | `books` 表只存「加过书架」的书 | 听过没收藏的书重启后查不到书名，续播失效 | 新增 `BookRepository.touchPlayedBook()`：播放时落库，`inBookshelf=false`，且已收藏的不动 |
+| 3 | `sourcesProvider` 异步加载 | 恢复时书源列表还是空 → 判定「源已删除」→ 直接放弃 | 恢复前 `_waitSources()` 等就绪（≤5s）；`lastPlayedProvider` 改 `watch` 以便书源到位后重算 |
+| 4 | 恢复后音源未装载 | 定时保存在 position=0 时把真实进度覆盖掉；播放键点了没反应 | `_saveProgress` 加守卫（无音源不写）；`restoreSession` 把进度写进 state；`togglePlay` 走 `play()` 让无音源时先装载章节 |
+
+顺带修掉两个自相矛盾的假 UI：
+
+- **听书记录页原本是写死的空状态**（无论库里多少条都显示「暂无听书记录」，
+  而「我的」页同时显示「听书记录 3 条」）。现在真读 `play_history` + `books`，
+  支持左滑删除、一键清空、进度条与「12:04 / 18:00」。
+- **「我的」计数口径**：`booksTable.count()` 会把「听过但没收藏」也算进收藏数
+  （上面的改动会让它立刻变错）。改为只数 `in_bookshelf=true`；
+  「听书记录」改成与历史页同源。
+
+还修了一个被新路径暴露的老 bug：`addToBookshelf` 的冲突目标只认主键，
+「先播放（已写入 books）再收藏」会撞 `book_id` 唯一索引直接抛异常。
+改为 `DoUpdate(target: [bookId])`。
+
+**设备实测**（Android 15 模拟器，debug 包）：
+
+```
+$ sqlite3 soft_sound.db "select book_id,chapter_index,position from play_history;"
+lrts_30011|16|992885          # 重启后仍在，没有被清零
+
+$ sqlite3 soft_sound.db "select book_id,name,in_bookshelf from books;"
+lrts_30011|大唐明月|《风起霓裳》原著|0   # 听过但未收藏 → 不计入收藏数
+```
+
+重启后首页底部直接出现迷你播放条「大唐明月 · 第17集_小惩大诫，天地牢笼」；
+「我的」显示「我的收藏 0 本 / 听书记录 1 条」，与历史页一致。
+截图 `screenshots/62_home_resume_mini.png`、`63_history_real.png`。

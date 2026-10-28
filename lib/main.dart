@@ -34,12 +34,16 @@ void main() async {
   // 注意：audio_service 断言 `!androidNotificationOngoing || androidStopForegroundOnPause`，
   // 所以 `androidStopForegroundOnPause` 必须保持默认 true（暂停时退出前台，
   // 但通知仍然留着，只是不再"进行中"）。
+  // 注意：`JustAudioBackground.init()` 会走平台通道往返，冷启动时
+  // 在模拟器/低端机上可能耗时数秒 —— 之前直接 await，实测启动白屏
+  // 47 秒并被系统判成 ANR。这里给 3 秒预算：正常设备毫秒级完成，
+  // 超时则不再等（init 本身继续跑，用户点播放前早就绪）。
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.softSound.soft_sound.channel.audio',
     androidNotificationChannelName: '轻听 · 播放控制',
     androidNotificationChannelDescription: '显示当前章节并提供播放/暂停/上下章控制',
     androidNotificationOngoing: true,
-  );
+  ).timeout(const Duration(seconds: 3), onTimeout: () {});
 
   HttpOverrides.global = MyHttpOverrides();
   runApp(

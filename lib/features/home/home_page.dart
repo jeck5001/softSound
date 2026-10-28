@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:soft_sound/services/last_played_service.dart';
 import 'package:soft_sound/services/lrts_home_api.dart';
+import 'package:soft_sound/services/player_service.dart';
 import 'package:soft_sound/theme/app_colors.dart';
 import 'package:soft_sound/theme/app_strings.dart';
+import 'package:soft_sound/theme/brand_widgets.dart';
 
 /// 首页 —— 按聆阅 `(tabs)/home.tsx` 真机截图 1:1 复刻版式（2026-10-16）。
 ///
@@ -69,6 +72,9 @@ class HomePage extends ConsumerWidget {
             const SizedBox(height: 16),
             const _SearchPill(),
             const SizedBox(height: 16),
+            // 「继续收听」卡片（聆阅 #21364 ResumeListenHint）：
+            // 有上次播放记录才显示，点击直接回到播放页接着听。
+            const _ResumeListenCard(),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: _QuickCards2x2(),
@@ -145,6 +151,138 @@ class HomePage extends ConsumerWidget {
 }
 
 /// 品牌头：◆ AUDIO UNIVERSE / 聆阅 / 三色条 / 副标题。
+/// 「继续收听」卡片 —— 对应聆阅首页 `ResumeListenHint`。
+///
+/// 文案（字节码 #21364 逐字）：眉标 `继续收听`、副标 `上次收听记录已就绪`、
+/// 标题 `上次收听的有声书`、正文 `第 N 章 · 听到 mm:ss`、按钮 `续播`。
+///
+/// 数据来自本地播放历史（[lastPlayedProvider]）；播放器里已有会话时
+/// （刚播完切页签）就不再重复提示。
+class _ResumeListenCard extends ConsumerWidget {
+  const _ResumeListenCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.appColors;
+    final playing = ref.watch(playerProvider).currentBook;
+    final async = ref.watch(lastPlayedProvider);
+
+    // 已经在播放/已装载会话时不打扰
+    if (playing != null) return const SizedBox.shrink();
+
+    final last = async.valueOrNull;
+    if (last == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: GestureDetector(
+        onTap: () async {
+          // 先恢复会话（章节 + 进度），再进播放页；进页面后由用户点播放。
+          // force：启动时那次可能已失败，这里必须允许重试
+          final ok =
+              await ref.read(sessionRestorerProvider).restoreOnce(force: true);
+          if (!context.mounted) return;
+          if (ok) {
+            context.push('/player');
+          } else {
+            // 章节拉取失败：退回详情页，让用户在那里重试
+            context.push('/book/${last.book.bookId}');
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFEAB308), width: 2),
+            boxShadow: lyHardShadowSm,
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: (last.book.coverUrl ?? '').startsWith('http')
+                      ? CachedNetworkImage(
+                          imageUrl: last.book.coverUrl!,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) =>
+                              Container(color: const Color(0xFFFEF3C7)),
+                        )
+                      : Container(
+                          color: const Color(0xFFFEF3C7),
+                          child: const Icon(Icons.headphones_rounded,
+                              color: Color(0xFFB45309)),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppStrings.continuePlay,
+                      style: const TextStyle(
+                        color: Color(0xFFB45309),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      last.book.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.foreground,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      last.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: c.mutedForeground,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAB308),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF000000), width: 1.5),
+                ),
+                child: const Text(
+                  AppStrings.resumeAction,
+                  style: TextStyle(
+                    color: Color(0xFF000000),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BrandHeader extends StatelessWidget {
   const _BrandHeader();
 

@@ -19,6 +19,7 @@ import 'package:soft_sound/features/reading/reading_page.dart';
 import 'package:soft_sound/features/explore/category_books_page.dart';
 import 'package:soft_sound/features/explore/lrts_category_books_page.dart';
 import 'package:soft_sound/features/explore/lrts_channel_page.dart';
+import 'package:soft_sound/services/last_played_service.dart';
 import 'package:soft_sound/services/player_service.dart';
 import 'package:soft_sound/theme/app_colors.dart';
 import 'package:soft_sound/theme/app_strings.dart';
@@ -186,13 +187,30 @@ final routerProvider = Provider<GoRouter>((ref) {
 ///
 /// 对应聆阅的 `(tabs)/_layout.tsx`：页签上方悬浮迷你播放条
 /// （封面 + 标题 + 波形 + 下一章 + 紫色暂停，2026-10-16 截图复刻）。
-class MainScaffold extends ConsumerWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
 
   const MainScaffold({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
+}
+
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
+  @override
+  void initState() {
+    super.initState();
+    // 启动时把「上次播放」装回播放器（不自动起播，只备好章节与进度）。
+    // 之前这条链完全没实现：进度存进库了，重启后从不读，
+    // 于是底部迷你播放条与「继续收听」都消失。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(sessionRestorerProvider).restoreOnce();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final navigationShell = widget.navigationShell;
     final playerState = ref.watch(playerProvider);
     final showMini = playerState.currentBook != null;
 

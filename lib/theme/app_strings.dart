@@ -115,6 +115,10 @@ class AppStrings {
   static const playing = '正在播放';
   static const noPlayContent = '暂无播放内容';
   static const replayLast = '上次收听的有声书';
+
+  /// 启动「继续收听」卡片（聆阅字节码 #21364 `ResumeListenHint` 逐字）。
+  static const resumeReady = '上次收听记录已就绪';
+  static const resumeAction = '续播';
   static const speed = '倍速';
   static const speedSetting = '语速设置';
   static const speedReset = '1.0x 还原';

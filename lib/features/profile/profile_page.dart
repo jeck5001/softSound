@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:soft_sound/theme/app_colors.dart';
+import 'package:soft_sound/features/history/history_page.dart';
 import 'package:soft_sound/theme/app_strings.dart';
 import 'package:soft_sound/theme/brand_widgets.dart';
 import 'package:soft_sound/theme/theme_controller.dart';
@@ -182,7 +183,9 @@ class ProfilePage extends ConsumerWidget {
                   ),
                   _StatCard(
                     label: '听书记录',
-                    value: '${stats.listenedChapters} 条',
+                    // 与历史页同源：都数「能看到的那几条记录」，
+                    // 避免「我的 3 条 / 历史页 1 条」自相矛盾。
+                    value: '${ref.watch(historyEntriesProvider).valueOrNull?.length ?? 0} 条',
                     color: const Color(0xFFD97706),
                     icon: Icons.headphones_rounded,
                     onTap: () => context.push('/history'),

@@ -6,6 +6,7 @@ import 'package:logger/logger.dart';
 import '../data/models/book.dart';
 import '../data/models/chapter.dart';
 import '../data/models/source_rule.dart';
+import '../data/repositories/book_repository.dart';
 import '../data/repositories/play_history_repository.dart';
 import '../data/repositories/stats_repository.dart';
 import '../theme/app_strings.dart';
@@ -167,6 +168,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   /// 累计收听统计仓库（可选注入，便于测试）。
   StatsRepository? _statsRepo;
+
+  /// 书籍仓库（可选注入）：播放时记录「听过的书」，让重启后能续播。
+  BookRepository? _bookRepo;
+
+  /// 注入书籍仓库（由 provider 在构造后调用）。
+  void attachBookRepository(BookRepository repo) => _bookRepo = repo;
 
   /// 注入统计仓库（由 provider 在构造后调用）。
   void attachStats(StatsRepository repo) => _statsRepo = repo;
@@ -372,6 +379,64 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _startProgressSaveTimer();
   }
   
+  /// 恢复上次播放会话（**不自动起播**）。
+  ///
+  /// 与 [initBook] 的区别：
+  /// - 不调用 `play()`，只把章节/进度装载好，等用户点播放；
+  /// - 章节列表要现拉（重启后内存里没有），失败就退回「只有书 + 进度」的
+  ///   半恢复状态，让 UI 至少能显示卡片、点进去再重试。
+  ///
+  /// 返回是否成功装载了可播放的章节。
+  Future<bool> restoreSession({
+    required SourceRule source,
+    required Book book,
+    required int chapterIndex,
+    required int positionMs,
+  }) async {
+    _saveProgressTimer?.cancel();
+
+    state = PlayerState(
+      currentBook: book,
+      currentSource: source,
+      chapters: const [],
+      currentChapterIndex: chapterIndex,
+      isLoading: true,
+    );
+
+    List<Chapter> chapters;
+    try {
+      chapters = await _parser.getChapterList(source, book);
+    } catch (e) {
+      _logger.w('恢复会话：拉取章节失败', error: e);
+      chapters = const [];
+    }
+
+    if (chapters.isEmpty) {
+      // 半恢复：书和进度留着，UI 显示「继续收听」卡片，点进去重新拉。
+      state = state.copyWith(isLoading: false);
+      _logger.w('恢复会话：章节为空，仅保留书籍与进度');
+      return false;
+    }
+
+    final safeIndex =
+        chapterIndex >= 0 && chapterIndex < chapters.length ? chapterIndex : 0;
+    state = PlayerState(
+      currentBook: book,
+      currentSource: source,
+      chapters: chapters,
+      currentChapterIndex: safeIndex,
+      isLoading: false,
+      // 关键：把进度写进 state，否则定时保存会把 0 覆盖回数据库，
+      // 下次续播就从 00:00 开始了（实测踩到：position 被写成 0）。
+      position: Duration(milliseconds: positionMs),
+      duration: Duration(milliseconds: chapters[safeIndex].duration ?? 0),
+    );
+    // 进度先存着，等用户真正点播放时再 seek（见 [_loadAndPlayChapter]）。
+    _pendingSeekPosition = positionMs > 0 ? positionMs : null;
+    _startProgressSaveTimer();
+    return true;
+  }
+
   void _startProgressSaveTimer() {
     _saveProgressTimer?.cancel();
     _saveProgressTimer = Timer.periodic(
@@ -382,7 +447,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   
   Future<void> _saveProgress() async {
     if (state.currentBook == null) return;
-    
+
+    // 没有装载音频源时（刚恢复会话还没点播放、或已 stop）不要写进度：
+    // 此时 position 是 0，写进去会把上次听到的位置覆盖掉，
+    // 导致「续播」永远从 00:00 开始。
+    if (_player.audioSource == null) {
+      _logger.d('跳过保存进度：音频源未装载');
+      return;
+    }
+
     await _historyRepo.saveProgress(
       bookId: state.currentBook!.bookId,
       sourceId: state.currentBook!.sourceId,
@@ -464,7 +537,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       // 媒体元数据：通知栏/锁屏/小米灵动岛读的就是这里的 title/album/artist/artUri。
       // 不传 tag 的话，即使有 MediaSession 也只会显示"未知"。
-      final mediaItem = MediaMetadata.forChapter(
+      // 记录「听过的书」：只更新 books 表元数据，**不动书架状态**。
+    // 不做这一步的话，没收藏过的书重启后查不到书名，续播直接失效。
+    final playedBook = state.currentBook;
+    if (playedBook != null) {
+      unawaited(_bookRepo?.touchPlayedBook(playedBook) ?? Future<void>.value());
+    }
+
+    final mediaItem = MediaMetadata.forChapter(
         book: state.currentBook,
         chapter: chapter,
         audioUrl: audioUrl,
@@ -524,19 +604,34 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
   }
 
-  /// 播放/暂停切换
+  /// 播放/暂停切换。
+  ///
+  /// 恢复会话后音频源尚未装载，直接 `_player.play()` 是空操作（点了没反应）。
+  /// 所以「要开始播」这条分支必须走 [play]，由它判断是否需要先装载章节。
   Future<void> togglePlay() async {
     if (_player.playing) {
       await _player.pause();
     } else {
-      await _player.play();
+      await play();
     }
   }
 
-  /// 播放
+  /// 播放。
+  ///
+  /// 恢复会话后音频源还没装载（`restoreSession` 只备好章节与进度），
+  /// 此时直接 `_player.play()` 是空操作 —— 需要先装载当前章节。
   Future<void> play() async {
+    if (_player.audioSource == null &&
+        state.chapters.isNotEmpty &&
+        state.currentChapterIndex < state.chapters.length) {
+      await _loadAndPlayChapter(state.currentChapterIndex);
+      return;
+    }
     await _player.play();
   }
+
+  /// 是否已装载音频源（用于 UI 判断「点播放要不要先加载」）。
+  bool get hasLoadedSource => _player.audioSource != null;
 
   /// 暂停
   Future<void> pause() async {
@@ -690,6 +785,7 @@ final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) 
   }
 
   notifier.attachStats(ref.watch(statsRepositoryProvider));
+  notifier.attachBookRepository(ref.watch(bookRepositoryProvider));
   // 字幕层与播放器共享全局 subtitleProvider（播放页/阅读页都在 watch 它）。
   notifier.attachSubtitle(ref.read(subtitleProvider.notifier));
   notifier.startDeviceMonitoring();

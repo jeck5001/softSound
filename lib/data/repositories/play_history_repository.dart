@@ -86,10 +86,17 @@ class PlayHistoryRepository {
     );
   }
 
-  /// 获取最近播放列表
+  /// 获取最近播放列表（最近在前）。
+  ///
+  /// 排序用 `lastPlayTime DESC, id DESC`：drift 的 `dateTime()` 默认按**整秒**
+  /// 存储，同一秒内写两条时时间戳完全相同，只按时间排序结果不确定
+  /// （「续播」会随机挑到另一本）。`id` 是自增主键，天然单调，作次级键稳定。
   Future<List<PlayProgress>> getRecentPlayed({int limit = 20}) async {
     final rows = await (_db.select(_db.playHistoryTable)
-      ..orderBy([(t) => OrderingTerm.desc(t.lastPlayTime)])
+      ..orderBy([
+        (t) => OrderingTerm.desc(t.lastPlayTime),
+        (t) => OrderingTerm.desc(t.id),
+      ])
       ..limit(limit))
       .get();
 

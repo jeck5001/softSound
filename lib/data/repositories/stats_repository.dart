@@ -65,7 +65,16 @@ class StatsRepository {
   Future<ListenerStats> snapshot() async {
     final seconds = await totalListeningSeconds();
 
-    final bookCount = await _db.booksTable.count().getSingle();
+    // 只统计**在书架里**的书：`books` 表还会存「听过但没收藏」的书
+    // （播放时 `touchPlayedBook` 写入，inBookshelf=false），
+    // 直接 count() 会把它们算进收藏数。
+    final bookCount = await (_db.selectOnly(_db.booksTable)
+          ..addColumns([_db.booksTable.id])
+          ..where(_db.booksTable.inBookshelf.equals(true)))
+        .map((row) => row.read(_db.booksTable.id))
+        .get()
+        .then((rows) => rows.length);
+
     final listenedChapters = await _db.playHistoryTable.count().getSingle();
 
     return ListenerStats(
