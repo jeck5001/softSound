@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
@@ -13,6 +14,7 @@ import '../theme/app_strings.dart';
 import '../theme/playback_settings.dart';
 import '../theme/subtitle_overlay.dart';
 import 'audio_effects.dart';
+import 'lingting_audio_handler.dart';
 import 'media_metadata.dart';
 import 'source_parser.dart';
 import 'system_settings_bridge.dart';
@@ -172,8 +174,27 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// 书籍仓库（可选注入）：播放时记录「听过的书」，让重启后能续播。
   BookRepository? _bookRepo;
 
+  /// 媒体会话处理器（可选注入；测试里为 null）。
+  LingtingAudioHandler? _handler;
+
+  /// 上次同步给媒体会话的整秒位置（节流用）。
+  int _lastSyncedSecond = -1;
+
   /// 注入书籍仓库（由 provider 在构造后调用）。
   void attachBookRepository(BookRepository repo) => _bookRepo = repo;
+
+  /// 注入媒体会话处理器，并把「通知栏/锁屏的切章意图」接回来。
+  void attachAudioHandler(LingtingAudioHandler handler) {
+    _handler = handler;
+    handler.attachPlayer(_player);
+    handler.onSkipChapter = (delta) {
+      if (delta > 0) {
+        nextChapter();
+      } else {
+        previousChapter();
+      }
+    };
+  }
 
   /// 注入统计仓库（由 provider 在构造后调用）。
   void attachStats(StatsRepository repo) => _statsRepo = repo;
@@ -318,6 +339,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       state = state.copyWith(position: position);
       _accumulateListening(position);
 
+      // 通知栏/锁屏进度条同步：每 ~1 秒一次，避免每帧都推平台通道。
+      final second = position.inSeconds;
+      if (second != _lastSyncedSecond) {
+        _lastSyncedSecond = second;
+        _syncMediaSession();
+      }
+
       // 跳过片尾：进入片尾区间即切下一章（只触发一次，靠 _outroTriggered 去重）。
       if (skipOutro && !_outroTriggered) {
         final total = state.duration;
@@ -338,6 +366,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
     _playerStateSubscription = _player.playingStream.listen((isPlaying) {
       state = state.copyWith(isPlaying: isPlaying);
+      _syncMediaSession();
     });
 
     _processingStateSubscription = _player.processingStateStream.listen((processingState) {
@@ -345,6 +374,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         isBuffering: processingState == ProcessingState.buffering,
         isLoading: processingState == ProcessingState.loading,
       );
+
+      _syncMediaSession(buffering: processingState == ProcessingState.buffering);
 
       if (processingState == ProcessingState.completed) {
         _onChapterComplete();
@@ -467,6 +498,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _logger.d('保存播放进度: 章节${state.currentChapterIndex}, 位置${state.position.inSeconds}秒');
   }
 
+  /// 是否是「真书」（有名字且不是加载占位）。
+  static bool isPlaceholderBook(Book book) {
+    final name = book.name.trim();
+    if (name.isEmpty) return true;
+    return name == AppStrings.loadingBookInfo || name.startsWith('加载书籍信息');
+  }
+
+  static bool _isRealBook(Book book) => !isPlaceholderBook(book);
+
   /// 是否已做过一次通知权限检查（避免每次切章都碰原生侧）。
   bool _notificationPermissionChecked = false;
 
@@ -539,27 +579,40 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // 不传 tag 的话，即使有 MediaSession 也只会显示"未知"。
       // 记录「听过的书」：只更新 books 表元数据，**不动书架状态**。
     // 不做这一步的话，没收藏过的书重启后查不到书名，续播直接失效。
+    //
+    // 但**占位书不能写**：从 `/book/{id}` 进入详情时，详情还没拉到之前
+    // `currentBook.name` 是「加载书籍信息…」，写进去就成了脏数据，
+    // 之后播放页永远显示「加载书籍信息…」（用户实测踩到）。
     final playedBook = state.currentBook;
-    if (playedBook != null) {
+    if (playedBook != null && _isRealBook(playedBook)) {
       unawaited(_bookRepo?.touchPlayedBook(playedBook) ?? Future<void>.value());
     }
 
-    final mediaItem = MediaMetadata.forChapter(
-        book: state.currentBook,
-        chapter: chapter,
-        audioUrl: audioUrl,
-      );
-
+      // 单条 AudioSource 不再挂 tag：元数据与「上一章/下一章」改由
+      // 媒体会话的队列承载（见 `_publishToMediaSession`）。
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(audioUrl),
           headers: headers,
-          tag: mediaItem,
         ),
       );
       
       if (_pendingSeekPosition != null && _pendingSeekPosition! > 0) {
-        await _player.seek(Duration(milliseconds: _pendingSeekPosition!));
+        // 越界保护：续播位置可能来自「另一章」（换书/换源/章节变短），
+        // 直接 seek 到超过时长的位置会让播放器立刻 completed 或抛错，
+        // 表现就是「第一次播不出来，切下一章才好」。
+        var target = Duration(milliseconds: _pendingSeekPosition!);
+        final total = _player.duration;
+        if (total != null && total > Duration.zero) {
+          final maxSeek = total - const Duration(seconds: 5);
+          if (maxSeek <= Duration.zero) {
+            target = Duration.zero;
+          } else if (target > maxSeek) {
+            _logger.w('续播位置越界（$target > $maxSeek），改为从头播放');
+            target = Duration.zero;
+          }
+        }
+        await _player.seek(target);
         _pendingSeekPosition = null;
       } else if (skipIntroSeconds > 0) {
         // 跳过片头：仅在新章节开始（无续播位置）时生效。
@@ -571,6 +624,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           await _player.seek(target);
         }
       }
+
+      // 把队列与当前章发布给媒体会话：通知栏/锁屏/灵动岛据此显示
+      // 「上一章 / 播放-暂停 / 下一章」以及第 N 章标题。
+      _publishToMediaSession(index);
 
       await _player.play();
       _logger.d('Playback started successfully');
@@ -586,6 +643,41 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         error: '播放失败: $e',
       );
     }
+  }
+
+  /// 把当前章节与整本书的队列推给媒体会话。
+  void _publishToMediaSession(int index) {
+    final handler = _handler;
+    if (handler == null) return;
+    final book = state.currentBook;
+    final items = <MediaItem>[
+      for (final chapter in state.chapters)
+        MediaMetadata.forChapter(
+          book: book,
+          chapter: chapter,
+          // 队列里只需要 id 唯一；真实 URL 在播放时单独赋给播放器
+          audioUrl: '${book?.bookId ?? ''}#${chapter.chapterId}',
+        ),
+    ];
+    if (items.isEmpty) return;
+    handler.publishChapter(
+      items: items,
+      index: index.clamp(0, items.length - 1),
+      position: _player.position,
+      duration: _player.duration ?? Duration.zero,
+      playing: _player.playing,
+      buffering: false,
+    );
+  }
+
+  /// 同步进度/播放态到媒体会话（通知栏进度条与按钮状态）。
+  void _syncMediaSession({bool? buffering}) {
+    _handler?.updatePlaybackState(
+      playing: _player.playing,
+      buffering: buffering ?? state.isBuffering,
+      position: _player.position,
+      duration: _player.duration ?? state.duration,
+    );
   }
 
   /// 章节播放完成
@@ -761,6 +853,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 }
 
+/// 媒体会话处理器（由 `main()` 在 `AudioService.init` 之后注入）。
+///
+/// 默认 null：单元测试 / 非音频场景不需要真实前台服务。
+/// 注入后播放器会把队列与状态发布给它，并接收通知栏的切章意图。
+final audioHandlerProvider = Provider<LingtingAudioHandler?>((ref) => null);
+
 /// 全局播放器 Provider
 ///
 /// 同时把播放设置（倍速、跳过片头尾、章节顺序）同步进播放器，
@@ -768,6 +866,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
   final historyRepo = ref.watch(playHistoryRepositoryProvider);
   final notifier = PlayerNotifier(historyRepo);
+
+  // 媒体会话：注入 handler，通知栏/锁屏的「上一章/下一章」才有效
+  final handler = ref.watch(audioHandlerProvider);
+  if (handler != null) notifier.attachAudioHandler(handler);
 
   void sync() {
     final s = ref.read(playbackSettingsProvider);

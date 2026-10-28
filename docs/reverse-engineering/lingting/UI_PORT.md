@@ -1053,3 +1053,60 @@ lrts_30011|大唐明月|《风起霓裳》原著|0   # 听过但未收藏 → �
 重启后首页底部直接出现迷你播放条「大唐明月 · 第17集_小惩大诫，天地牢笼」；
 「我的」显示「我的收藏 0 本 / 听书记录 1 条」，与历史页一致。
 截图 `screenshots/62_home_resume_mini.png`、`63_history_real.png`。
+
+### 6.47 通知栏缺上下章 / 不自动续播 / 首播失败 / 书籍信息加载不出来（2026-10-28 用户真机反馈）
+
+四个问题，根因分两类。
+
+**A. 媒体会话用的是 `just_audio_background`（能力不足）**
+
+它把控制项写死成「播放/暂停 + 停止 + 快进快退」，**没有上一章/下一章**，
+也没有真正的队列 —— 于是：
+- 通知栏/锁屏只有播放键（问题 1）；
+- 「一章播完接下一章」没有队列支撑，只能靠 Dart 侧定时器兜（问题 2）。
+
+修复：换成 `audio_service` 自定义 `LingtingAudioHandler`（`lib/services/lingting_audio_handler.dart`）：
+
+| 能力 | 实现 |
+|---|---|
+| 三键常驻 | `controlsFor()` = `skipToPrevious / play-pause / skipToNext`，`androidCompactActionIndices [0,1,2]` |
+| 切章 | `skipToNext/skipToPrevious` → `onSkipChapter(±1)` → `PlayerNotifier.nextChapter()` |
+| 队列 | `publishChapter(items, index)` 把整本 276 章作为 `MediaItem` 队列发布 |
+| 进度 | 位置每过 1 整秒同步一次（节流，避免每帧推平台通道） |
+| 快进/快退 | `fastForward` +30s / `rewind` -15s，夹到「时长-2s」不触发 completed |
+
+`just_audio_background` 依赖已移除，`MediaItem` 改用 `audio_service` 的类型。
+
+**B. 首播失败 + 占位书名（两个真实 bug）**
+
+- **首播失败**：`AudioService.init` 之前给了 3 秒超时提前放行，首次
+  `setAudioSource` 会赶在服务就绪之前 → 没声音，切下一章才好。
+  现在**必须 await**（冷启动实测 3.6s，可接受）。
+  另加续播位置**越界保护**：历史位置来自更长章节时，直接 seek 会立刻
+  completed 或抛错，现在越界就从头播。
+- **书籍信息加载不出来**：从 `/book/{id}` 进详情时，详情还没拉到之前
+  `currentBook.name` 是占位串「加载书籍信息…」；上一轮加的
+  `touchPlayedBook` 把它写进了 `books` 表 → 播放页永远显示
+  「加载书籍信息…」（用户截图就是这个）。
+  现在两处修：`_isRealBook()` 拦掉占位书不落库；
+  `LastPlayedService` 遇到历史脏数据会重新拉详情补全并回写，补不到就跳过。
+
+**设备实测**（Android 15 模拟器）：
+
+```
+$ dumpsys notification | grep softSound
+  ... actions=3 category=transport flags=ONGOING_EVENT|FOREGROUND_SERVICE
+$ dumpsys media_session | grep -A14 com.softSound
+  state=PLAYING(3) active item id=16
+  metadata: 第17集_小惩大诫，天地牢笼, 夙染白o，陆青烛 演播, 大唐明月|《风起霓裳》原著
+$ cmd media_session dispatch next
+[media] skipToNext -> 切章
+  → active item id=17  metadata: 第18集_大树易靠，安稳难求   ✅ 按钮真的切章
+```
+
+通知栏截图见 `screenshots/64_notif_prev_next.png`（上一章 / 暂停 / 下一章 三键）。
+
+> 未能在模拟器上跑完的项：章节自然播完触发 `completed` 的自动续播。
+> 该路径与上面已验证的 `nextChapter()` 是同一条（`processingState == completed
+> → _onChapterComplete → nextChapter`），本轮只保证了它被正确接线；
+> 模拟器 CDN 单章加载需 40–60 秒、且 `system_server` 已 ANR，无法等满 17 分钟。

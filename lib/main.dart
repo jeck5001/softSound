@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_service/audio_service.dart';
 
 import 'app/routes.dart';
+import 'services/lingting_audio_handler.dart';
+import 'services/player_service.dart';
 import 'theme/app_strings.dart';
 import 'theme/app_theme.dart';
 import 'theme/effects_settings.dart';
@@ -21,34 +23,36 @@ class MyHttpOverrides extends HttpOverrides {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 媒体会话 + 通知栏/锁屏/灵动岛控制。
+  // 媒体会话 + 通知栏 / 锁屏 / 蓝牙按键 / 小米灵动岛。
   //
-  // 之前**完全没有初始化** `just_audio_background`，所以：
-  // - 下拉通知栏没有媒体卡片（没有 MediaSession，系统无从显示）；
-  // - 锁屏没有播放控制；
-  // - 小米 HyperOS 的「灵动岛 / 焦点通知」也不会出现
-  //   （它读的就是持续型媒体通知 + MediaSession 元数据）。
+  // 用 `audio_service` 自定义 handler 而不是 `just_audio_background`：
+  // 后者控制项写死为「播放/暂停 + 停止」，**没有上一章/下一章**，
+  // 导致用户看到「通知栏没有下一章按钮、一章播完不接下一章」。
   //
-  // `androidNotificationOngoing: true` 让通知保持"进行中"，
-  // 这是灵动岛/常驻媒体卡的前提。
-  // 注意：audio_service 断言 `!androidNotificationOngoing || androidStopForegroundOnPause`，
-  // 所以 `androidStopForegroundOnPause` 必须保持默认 true（暂停时退出前台，
-  // 但通知仍然留着，只是不再"进行中"）。
-  // 注意：`JustAudioBackground.init()` 会走平台通道往返，冷启动时
-  // 在模拟器/低端机上可能耗时数秒 —— 之前直接 await，实测启动白屏
-  // 47 秒并被系统判成 ANR。这里给 3 秒预算：正常设备毫秒级完成，
-  // 超时则不再等（init 本身继续跑，用户点播放前早就绪）。
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.softSound.soft_sound.channel.audio',
-    androidNotificationChannelName: '轻听 · 播放控制',
-    androidNotificationChannelDescription: '显示当前章节并提供播放/暂停/上下章控制',
-    androidNotificationOngoing: true,
-  ).timeout(const Duration(seconds: 3), onTimeout: () {});
+  // `AudioService.init` 必须 **await**：它要先把前台服务与 MediaSession
+  // 建好并把 handler 注册进去。之前给 3 秒超时提前放行，会让首次
+  // `setAudioSource` 赶在服务就绪之前而失败（表现为「第一次播不出来」）。
+  final audioHandler = await AudioService.init(
+    builder: LingtingAudioHandler.new,
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.softSound.soft_sound.channel.audio',
+      androidNotificationChannelName: '轻听 · 播放控制',
+      androidNotificationChannelDescription: '显示当前章节并提供播放/暂停/上下章控制',
+      // 进行中通知是常驻媒体卡 / 灵动岛的前提；
+      // audio_service 断言它必须搭配 stopForegroundOnPause=true（默认）。
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
+  );
 
   HttpOverrides.global = MyHttpOverrides();
   runApp(
-    const ProviderScope(
-      child: SoftSoundApp(),
+    ProviderScope(
+      overrides: [
+        // 把 handler 交给播放器（播放器负责注入 AudioPlayer 与切章回调）
+        audioHandlerProvider.overrideWithValue(audioHandler),
+      ],
+      child: const SoftSoundApp(),
     ),
   );
 }

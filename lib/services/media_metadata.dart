@@ -1,4 +1,4 @@
-import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_service/audio_service.dart';
 
 import '../data/models/book.dart';
 import '../data/models/chapter.dart';

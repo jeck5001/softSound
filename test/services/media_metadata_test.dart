@@ -117,12 +117,34 @@ void main() {
   group('通知链路接线守卫（静态扫描）', () {
     String read(String path) => File(path).readAsStringSync();
 
-    test('main.dart 初始化 JustAudioBackground', () {
+    test('main.dart 用 audio_service 初始化（含队列与上下章控制）', () {
       final src = read('lib/main.dart');
-      expect(src.contains('JustAudioBackground.init('), isTrue,
+      expect(src.contains('AudioService.init('), isTrue,
           reason: '未初始化就没有 MediaSession，通知栏/灵动岛都不会出现');
       expect(src.contains('androidNotificationOngoing: true'), isTrue,
           reason: '进行中通知是常驻媒体卡/灵动岛的前提');
+      expect(src.contains('LingtingAudioHandler'), isTrue);
+      // 必须 await：提前放行会让首次 setAudioSource 赶在服务就绪之前失败
+      expect(src.contains('await AudioService.init('), isTrue,
+          reason: '不 await 会导致「第一次播不出来」');
+    });
+
+    test('通知栏/锁屏提供「上一章 / 播放-暂停 / 下一章」三个控制项', () {
+      final src = read('lib/services/lingting_audio_handler.dart');
+      expect(src.contains('MediaControl.skipToPrevious'), isTrue);
+      expect(src.contains('MediaControl.skipToNext'), isTrue);
+      expect(src.contains('androidCompactActionIndices: const [0, 1, 2]'),
+          isTrue);
+      expect(src.contains('Future<void> skipToNext()'), isTrue,
+          reason: '不实现 skipToNext，通知栏按钮点了没反应');
+      expect(src.contains('Future<void> skipToPrevious()'), isTrue);
+    });
+
+    test('切章回调接回播放器（自动续播/上下章同源）', () {
+      final src = read('lib/services/player_service.dart');
+      expect(src.contains('onSkipChapter'), isTrue);
+      expect(src.contains('_publishToMediaSession'), isTrue,
+          reason: '不发布队列，通知栏就不知道后面还有没有下一章');
     });
 
     test('AndroidManifest 声明媒体服务、按键接收器与所需权限', () {
@@ -148,10 +170,11 @@ void main() {
       expect(src.contains('class MainActivity : AudioServiceActivity()'), isTrue);
     });
 
-    test('播放时给 AudioSource 带上 MediaItem（否则通知显示“未知”）', () {
+    test('元数据经媒体会话队列发布（不再挂单条 tag）', () {
       final src = read('lib/services/player_service.dart');
       expect(src.contains('MediaMetadata.forChapter('), isTrue);
-      expect(src.contains('tag: mediaItem'), isTrue);
+      expect(src.contains('_publishToMediaSession'), isTrue,
+          reason: '队列才会让通知栏知道「第 N / M 章」并给出上下章按钮');
     });
 
     test('首次播放前申请通知权限', () {

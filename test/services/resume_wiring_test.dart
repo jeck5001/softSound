@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soft_sound/data/models/book.dart';
+import 'package:soft_sound/services/player_service.dart';
 
 /// 「上次播放」恢复链路的**静态接线守卫**。
 ///
@@ -12,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 这些都不是能靠单测覆盖的 UI 时序问题，用静态扫描把接线钉住。
 void main() {
+  group('占位书识别', _placeholderBookTests);
+
   String read(String path) => File(path).readAsStringSync();
 
   group('启动恢复', () {
@@ -89,6 +93,19 @@ void main() {
     });
   });
 
+  group('首播可靠性', () {
+    test('占位书不落库（否则播放页永远显示「加载书籍信息…」）', () {
+      final src = read('lib/services/player_service.dart');
+      expect(src.contains('_isRealBook(playedBook)'), isTrue);
+      expect(src.contains('加载书籍信息'), isTrue, reason: '占位判断依据');
+    });
+
+    test('续播位置越界时从头播（避免首播直接 completed）', () {
+      final src = read('lib/services/player_service.dart');
+      expect(src.contains('续播位置越界'), isTrue);
+    });
+  });
+
   group('历史排序稳定性', () {
     test('按时间 + 自增 id 双键排序', () {
       final src = read('lib/data/repositories/play_history_repository.dart');
@@ -96,5 +113,27 @@ void main() {
       expect(src.contains('OrderingTerm.desc(t.id)'), isTrue,
           reason: 'drift dateTime 精度是秒，同秒写入需要 id 兜底');
     });
+  });
+}
+
+/// 占位书识别：`加载书籍信息…` 这类占位名绝不能落库，否则播放页永远显示它。
+void _placeholderBookTests() {
+  Book book(String name) => Book(
+        bookId: 'x',
+        sourceId: 'lrts',
+        name: name,
+        detailUrl: '1',
+      );
+
+  test('占位名被识别', () {
+    expect(PlayerNotifier.isPlaceholderBook(book('加载书籍信息…')), isTrue);
+    expect(PlayerNotifier.isPlaceholderBook(book('加载书籍信息')), isTrue);
+    expect(PlayerNotifier.isPlaceholderBook(book('   ')), isTrue);
+    expect(PlayerNotifier.isPlaceholderBook(book('')), isTrue);
+  });
+
+  test('真实书名不误判', () {
+    expect(PlayerNotifier.isPlaceholderBook(book('大唐明月')), isFalse);
+    expect(PlayerNotifier.isPlaceholderBook(book('夜无疆')), isFalse);
   });
 }

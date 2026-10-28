@@ -8,6 +8,7 @@ import '../data/repositories/play_history_repository.dart';
 import '../features/source_manager/source_manager_page.dart';
 import '../theme/app_strings.dart';
 import 'player_service.dart';
+import 'source_parser.dart';
 
 /// 「上次播放」快照 —— 启动时用来恢复播放会话。
 ///
@@ -67,6 +68,7 @@ class LastPlayedService {
   final PlayHistoryRepository _historyRepo;
   final BookRepository _bookRepo;
   final List<SourceRule> Function() _sources;
+  final SourceParser _parser = SourceParser();
 
   /// 最近一条可用的播放记录。没有时返回 null。
   Future<LastPlayed?> load() async {
@@ -76,15 +78,43 @@ class LastPlayedService {
         // 跳过「点开就退」：第 1 章且不到 3 秒，弹续播只会烦人。
         if (p.chapterIndex == 0 && p.position < 3000) continue;
 
-        final book = await _bookRepo.getBookById(p.bookId);
+        var book = await _bookRepo.getBookById(p.bookId);
         if (book == null) continue; // 没进过 books 表 → 无法还原书名
         final source = _sourceOf(p.sourceId, book.sourceId);
         if (source == null) continue; // 书源已删
+
+        // 历史脏数据修复：早期把「加载书籍信息…」这个占位名写进了库，
+        // 导致播放页永远显示「加载书籍信息…」。这里重新拉一次详情补全，
+        // 补不到就跳过这条（宁可没有卡片，也不展示占位文字）。
+        if (PlayerNotifier.isPlaceholderBook(book)) {
+          final fixed = await _repairBook(book, source);
+          if (fixed == null) continue;
+          book = fixed;
+        }
         return LastPlayed(book: book, source: source, progress: p);
       }
       return null;
     } catch (e) {
       debugPrint('读取上次播放失败: $e');
+      return null;
+    }
+  }
+
+  /// 用书源重新拉详情，补全书名/封面并回写 books 表。
+  Future<Book?> _repairBook(Book book, SourceRule source) async {
+    try {
+      final detail = await _parser.getBookDetail(source, book);
+      if (detail == null || detail.name.trim().isEmpty) return null;
+      if (PlayerNotifier.isPlaceholderBook(detail)) return null;
+      final merged = detail.copyWith(
+        bookId: book.bookId,
+        sourceId: book.sourceId,
+        inBookshelf: book.inBookshelf,
+      );
+      await _bookRepo.touchPlayedBook(merged);
+      return merged;
+    } catch (e) {
+      debugPrint('修复占位书名失败: $e');
       return null;
     }
   }
