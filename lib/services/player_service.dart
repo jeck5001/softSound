@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
@@ -31,6 +33,13 @@ class PlayerState {
   final bool isPlaying;
   final bool isLoading;
   final bool isBuffering;
+
+  /// 当前章节是否已播到结尾（just_audio 的 `ProcessingState.completed`）。
+  ///
+  /// 注意：此时 `isPlaying` **仍然是 true**（播放器没有自行 pause），
+  /// 所以不能只用 `isPlaying` 决定按钮图标，否则会出现
+  /// 「明明没声音了，还显示暂停键；点一下变播放键，再点又没反应」。
+  final bool isCompleted;
   final String? error;
   final Duration? sleepTimerRemaining;
   final bool sleepAfterChapter;
@@ -49,11 +58,18 @@ class PlayerState {
     this.isPlaying = false,
     this.isLoading = false,
     this.isBuffering = false,
+    this.isCompleted = false,
     this.error,
     this.sleepTimerRemaining,
     this.sleepAfterChapter = false,
     this.sleepTimerEnding = false,
   });
+
+  /// 界面是否该显示「暂停键」。
+  ///
+  /// 只有「真的在出声」才显示暂停；已播完（completed）即便 isPlaying 为 true，
+  /// 也应显示播放键，让用户能重播/继续。
+  bool get showPauseIcon => isPlaying && !isCompleted;
 
   Chapter? get currentChapter =>
       chapters.isNotEmpty && currentChapterIndex < chapters.length
@@ -95,6 +111,7 @@ class PlayerState {
     bool? isPlaying,
     bool? isLoading,
     bool? isBuffering,
+    bool? isCompleted,
     String? error,
     Duration? sleepTimerRemaining,
     bool? sleepAfterChapter,
@@ -112,6 +129,7 @@ class PlayerState {
       isPlaying: isPlaying ?? this.isPlaying,
       isLoading: isLoading ?? this.isLoading,
       isBuffering: isBuffering ?? this.isBuffering,
+      isCompleted: isCompleted ?? this.isCompleted,
       error: error,
       sleepTimerRemaining: clearSleepTimer ? null : (sleepTimerRemaining ?? this.sleepTimerRemaining),
       sleepAfterChapter: clearSleepTimer ? false : (sleepAfterChapter ?? this.sleepAfterChapter),
@@ -180,6 +198,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// 上次同步给媒体会话的整秒位置（节流用）。
   int _lastSyncedSecond = -1;
 
+  /// 用户是否仍期望播放。
+  ///
+  /// 章节 URL 在真机上要拉几十秒，这段时间里用户可能已经按了暂停；
+  /// 加载完成后如果无脑 `_player.play()`，就会「按了暂停却自己响起来」，
+  /// 界面也会瞬间跳回暂停键 —— 属于同一类按钮状态错位。
+  bool _playRequested = true;
+
   /// 注入书籍仓库（由 provider 在构造后调用）。
   void attachBookRepository(BookRepository repo) => _bookRepo = repo;
 
@@ -246,6 +271,45 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       pause();
       state = state.copyWith(error: AppStrings.bluetoothDisconnected);
     });
+    await _listenInterruptions();
+  }
+
+  /// 音频焦点被抢（来电/其他 App 播放）时跟随系统暂停/恢复。
+  ///
+  /// 不做这一步的话，系统会把音频静音但 `just_audio` 的 `playing` 仍是 true，
+  /// 界面就停在一个「显示暂停键、其实没有声音」的错位上
+  /// —— 这正是用户反馈的「按钮状态不太对」。
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
+  bool _pausedByInterruption = false;
+
+  Future<void> _listenInterruptions() async {
+    if (_interruptionSub != null) return;
+    if (kIsWeb) return;
+    try {
+      final session = await AudioSession.instance;
+      _interruptionSub = session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          switch (event.type) {
+            case AudioInterruptionType.pause:
+            case AudioInterruptionType.unknown:
+              _pausedByInterruption = _player.playing;
+              _logger.d('音频被打断，暂停播放');
+              pause();
+            case AudioInterruptionType.duck:
+              // 闪避（导航播报等）：不暂停，交给系统压低音量
+              _logger.d('音频被打断（duck），继续播放');
+          }
+        } else {
+          if (_pausedByInterruption) {
+            _pausedByInterruption = false;
+            _logger.d('音频打断结束，恢复播放');
+            play();
+          }
+        }
+      });
+    } catch (e) {
+      _logger.w('监听音频打断失败', error: e);
+    }
   }
 
   /// 上一秒的播放位置，用于计算实际收听增量。
@@ -373,6 +437,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       state = state.copyWith(
         isBuffering: processingState == ProcessingState.buffering,
         isLoading: processingState == ProcessingState.loading,
+        isCompleted: processingState == ProcessingState.completed,
       );
 
       _syncMediaSession(buffering: processingState == ProcessingState.buffering);
@@ -629,6 +694,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // 「上一章 / 播放-暂停 / 下一章」以及第 N 章标题。
       _publishToMediaSession(index);
 
+      // 加载期间用户可能已经暂停：此时不要再自动起播
+      if (!_playRequested) {
+        _logger.d('加载完成，但用户已暂停，保持暂停状态');
+        state = state.copyWith(isLoading: false);
+        return;
+      }
+
       await _player.play();
       _logger.d('Playback started successfully');
       state = state.copyWith(isLoading: false, error: null);
@@ -665,7 +737,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       index: index.clamp(0, items.length - 1),
       position: _player.position,
       duration: _player.duration ?? Duration.zero,
-      playing: _player.playing,
+      // completed 时 playing 仍为 true，但对用户来说「没在播」
+      playing: _player.playing && !state.isCompleted,
       buffering: false,
     );
   }
@@ -673,7 +746,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// 同步进度/播放态到媒体会话（通知栏进度条与按钮状态）。
   void _syncMediaSession({bool? buffering}) {
     _handler?.updatePlaybackState(
-      playing: _player.playing,
+      playing: _player.playing && !state.isCompleted,
       buffering: buffering ?? state.isBuffering,
       position: _player.position,
       duration: _player.duration ?? state.duration,
@@ -701,6 +774,16 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// 恢复会话后音频源尚未装载，直接 `_player.play()` 是空操作（点了没反应）。
   /// 所以「要开始播」这条分支必须走 [play]，由它判断是否需要先装载章节。
   Future<void> togglePlay() async {
+    // 已播完（列表最后一章 / 睡眠定时停在章末）：
+    // just_audio 此时 playing 仍为 true，直接 pause/play 会变成
+    // 「点一下变播放键，再点又没声音」。正确做法是从头重播本章。
+    if (state.isCompleted) {
+      await _player.seek(Duration.zero);
+      state = state.copyWith(isCompleted: false, position: Duration.zero);
+      await play();
+      return;
+    }
+
     if (_player.playing) {
       await _player.pause();
     } else {
@@ -713,6 +796,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// 恢复会话后音频源还没装载（`restoreSession` 只备好章节与进度），
   /// 此时直接 `_player.play()` 是空操作 —— 需要先装载当前章节。
   Future<void> play() async {
+    _playRequested = true;
+    if (state.isCompleted) {
+      // 同上：播完后再按播放，应当从头重播，而不是原地不动
+      await _player.seek(Duration.zero);
+      state = state.copyWith(isCompleted: false, position: Duration.zero);
+    }
     if (_player.audioSource == null &&
         state.chapters.isNotEmpty &&
         state.currentChapterIndex < state.chapters.length) {
@@ -727,6 +816,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   /// 暂停
   Future<void> pause() async {
+    _playRequested = false;
     await _player.pause();
   }
 
@@ -844,6 +934,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _saveProgress();
     _saveProgressTimer?.cancel();
     _sleepTimer?.cancel();
+    _interruptionSub?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _playerStateSubscription?.cancel();

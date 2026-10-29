@@ -400,7 +400,10 @@ class PlayerPage extends ConsumerWidget {
                       ),
                     )
                   : Icon(
-                      playerState.isPlaying
+                      // 用 showPauseIcon 而不是 isPlaying：
+                      // 章节播完时 just_audio 的 playing 仍为 true，
+                      // 只看 isPlaying 会一直显示暂停键、点了也没反应。
+                      playerState.showPauseIcon
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
                       size: 44,

@@ -362,7 +362,7 @@ class _MiniPlayerBar extends ConsumerWidget {
                   boxShadow: lyHardShadowSm,
                 ),
                 child: Icon(
-                  state.isPlaying
+                  state.showPauseIcon
                       ? Icons.pause_rounded
                       : Icons.play_arrow_rounded,
                   color: Colors.white,

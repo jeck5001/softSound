@@ -1110,3 +1110,40 @@ $ cmd media_session dispatch next
 > 该路径与上面已验证的 `nextChapter()` 是同一条（`processingState == completed
 > → _onChapterComplete → nextChapter`），本轮只保证了它被正确接线；
 > 模拟器 CDN 单章加载需 40–60 秒、且 `system_server` 已 ANR，无法等满 17 分钟。
+
+### 6.48 播放按钮状态错位（2026-10-29 用户真机反馈）
+
+**现象**：按钮状态有时候不对 —— 明明没声音却显示暂停键，点一下变播放键，
+再点又没声音，来回跳。
+
+根因有三层，都是「`isPlaying` 不等于用户感知的在播」：
+
+1. **章节播完 `playing` 仍为 true**。`just_audio` 播到结尾不会自己 pause，
+   `playing == true` + `processingState == completed`。界面只看 `isPlaying`
+   → 一直显示暂停键，点它只是 `pause()`，于是「点了没反应」。
+2. **音频焦点被打断**（来电/其他 App 播放）。系统把音频静音，但
+   `just_audio` 的 `playing` 还是 true，界面停在「暂停键 + 没声音」。
+3. **加载期间按暂停**。章节 URL 在真机要拉几十秒，这期间按暂停，
+   加载完成后仍会 `_player.play()` —— 用户按了暂停，它自己响起来。
+
+修复：
+
+- `PlayerState` 新增 `isCompleted`，并派生 **`showPauseIcon = isPlaying && !isCompleted`**；
+  播放页与迷你条**都改用它**（此前两处各自用 `isPlaying`，容易出现
+  「页面显示播放、通知栏显示暂停」）。
+- `togglePlay()` / `play()` 遇到 `isCompleted` 先 `seek(0)` 再播 ——
+  播完后按播放键=从头重播本章，而不是原地不动。
+- 媒体会话发布播放态改为 `_player.playing && !state.isCompleted`，
+  播完后通知栏也变成播放键。
+- 监听 `AudioSession.interruptionEventStream`：被打断（pause/unknown）跟随暂停，
+  打断结束自动恢复；`duck`（导航播报）不暂停。
+- 新增 `_playRequested` 守卫：加载完成时若用户已暂停，保持暂停。
+
+**设备实测**（Android 15 模拟器，debug 包）：
+
+| 场景 | 结果 |
+|---|---|
+| 播放中 | 按钮为 ⏸（`screenshots/66_btn_playing.png`） |
+| 暂停后 | 按钮为 ▶（`screenshots/65_btn_paused.png`） |
+| 快进到章末（`completed`） | 媒体会话 `state=PAUSED`（变成播放键，不再卡在暂停键） |
+| 章末自动续播 | 第18集播完 → 自动加载并播放第19集（`active item 17→18`）✅ |
