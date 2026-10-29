@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../data/models/book.dart';
 import '../../data/models/source_rule.dart';
 import '../../services/search_history.dart';
+import '../../services/search_relevance.dart';
 import '../../services/source_parser.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_strings.dart';
@@ -44,54 +45,166 @@ class SearchState {
 
 /// 搜索状态管理
 class SearchNotifier extends StateNotifier<SearchState> {
+  SearchNotifier(this._sources) : _parser = SourceParser(), super(const SearchState());
+
   final SourceParser _parser;
   final List<SourceRule> _sources;
 
-  SearchNotifier(this._sources) : _parser = SourceParser(), super(const SearchState());
+  /// 同时并发搜索的源数量上限。
+  ///
+  /// 全并发会撞上行 Edge 的「项目级并发限制」（429 projectConcurrencyLimitExceeded），
+  /// 反而更慢；串行又是各源延迟相加。3 路是实测比较稳的折中。
+  static const int maxConcurrent = 3;
+
+  /// 单源超时：慢源不能拖住整次搜索（之后到货也不再刷 UI）。
+  static const Duration sourceTimeout = Duration(seconds: 10);
+
+  /// 结果缓存（关键词 → 分组结果），5 分钟内重复搜索直接命中。
+  static final Map<String, Map<String, List<Book>>> _cache = {};
+  static final Map<String, DateTime> _cacheAt = {};
+  static const Duration cacheTtl = Duration(minutes: 5);
+
+  /// 供测试清理缓存。
+  @visibleForTesting
+  static void clearCache() {
+    _cache.clear();
+    _cacheAt.clear();
+  }
 
   Future<void> search(String keyword) async {
-    if (keyword.trim().isEmpty) return;
+    final kw = keyword.trim();
+    if (kw.isEmpty) return;
 
-    state = state.copyWith(isLoading: true, error: null, results: [], groupedResults: {});
+    final cached = _readCache(kw);
+    // 缓存可能是**部分**结果（上次中途离开过）：先立刻显示已有分组，
+    // 只补搜缺失的书源 —— 首屏瞬时可见，同时不丢完整性。
+    final grouped = <String, List<Book>>{
+      if (cached != null) ...cached,
+    };
 
-    try {
-      final enabledSources = _sources.where((s) => s.enabled).toList();
+    final enabledSources = _sources.where((s) => s.enabled).toList();
+    if (enabledSources.isEmpty) {
+      state = state.copyWith(isLoading: false, error: AppStrings.searchNoSource);
+      return;
+    }
 
-      if (enabledSources.isEmpty) {
-        state = state.copyWith(
-          isLoading: false,
-          error: AppStrings.searchNoSource,
-        );
-        return;
-      }
+    final todo =
+        enabledSources.where((s) => !grouped.containsKey(s.sourceId)).toList();
 
-      final allResults = <Book>[];
-      final grouped = <String, List<Book>>{};
-
-      for (final source in enabledSources) {
-        try {
-          final books = await _parser.search(source, keyword);
-          allResults.addAll(books);
-          if (books.isNotEmpty) {
-            grouped[source.sourceId] = books;
-          }
-        } catch (e) {
-          debugPrint('Search error for ${source.sourceName}: $e');
-        }
-      }
-
-      state = state.copyWith(
-        isLoading: false,
-        results: allResults,
-        groupedResults: grouped,
-        error: allResults.isEmpty ? AppStrings.searchNoResult : null,
+    if (grouped.isNotEmpty) {
+      final ordered = _ordered(grouped);
+      state = SearchState(
+        results: [for (final list in ordered.values) ...list],
+        groupedResults: ordered,
+        isLoading: todo.isNotEmpty,
       );
-    } catch (e) {
+    } else {
       state = state.copyWith(
-        isLoading: false,
-        error: '${AppStrings.searchFailedPrefix}$e',
+        isLoading: true,
+        error: null,
+        results: [],
+        groupedResults: {},
       );
     }
+
+    if (todo.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        error: null,
+      );
+      return;
+    }
+
+    var remaining = todo.length;
+
+    Future<void> runOne(SourceRule source) async {
+      try {
+        final books = await _parser.search(source, kw).timeout(sourceTimeout);
+        // 相关度过滤 + 排序：上游是模糊匹配，会带回完全不相关的书
+        final ranked = [
+          for (final b in SearchRelevance.rank(books, kw))
+            b.copyWith(author: SearchRelevance.cleanAuthor(b.author)),
+        ];
+        if (ranked.isNotEmpty) {
+          grouped[source.sourceId] = ranked;
+          // 增量写缓存：用户中途返回上一页也留得住（此前只在全部完成时写）
+          _mergeCache(kw, source.sourceId, ranked);
+          if (mounted) {
+            final ordered = _ordered(grouped);
+            state = state.copyWith(
+              results: [for (final list in ordered.values) ...list],
+              groupedResults: ordered,
+              // 还有源在跑就继续显示加载态（顶部细进度）
+              isLoading: remaining > 1,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Search error for ${source.sourceName}: $e');
+      } finally {
+        remaining--;
+        if (remaining == 0 && mounted) {
+          final ordered = _ordered(grouped);
+          state = state.copyWith(
+            isLoading: false,
+            results: [for (final list in ordered.values) ...list],
+            groupedResults: ordered,
+            error: ordered.isEmpty ? AppStrings.searchNoResult : null,
+          );
+        }
+      }
+    }
+
+    // 简单并发池：最多 maxConcurrent 个源同时在跑
+    var cursor = 0;
+    Future<void> worker() async {
+      while (cursor < todo.length) {
+        final source = todo[cursor++];
+        await runOne(source);
+      }
+    }
+
+    await Future.wait([
+      for (var i = 0; i < maxConcurrent && i < todo.length; i++) worker(),
+    ]);
+  }
+
+  void _mergeCache(String kw, String sourceId, List<Book> books) {
+    final at = _cacheAt[kw];
+    final expired = at == null || DateTime.now().difference(at) > cacheTtl;
+    final map = expired ? <String, List<Book>>{} : (_cache[kw] ?? <String, List<Book>>{});
+    map[sourceId] = books;
+    _cache[kw] = map;
+    _cacheAt[kw] = DateTime.now();
+  }
+
+  /// 按书源配置顺序重排分组结果。
+  ///
+  /// 并发 + 渐进出结果会让分组按「谁先回来」插入，列表顺序会跳；
+  /// 固定成配置顺序，用户看到的分组位置才稳定。
+  Map<String, List<Book>> _ordered(Map<String, List<Book>> grouped) {
+    if (grouped.isEmpty) return const {};
+    final out = <String, List<Book>>{};
+    for (final s in _sources) {
+      final list = grouped[s.sourceId];
+      if (list != null && list.isNotEmpty) out[s.sourceId] = list;
+    }
+    // 兜底：配置里没有的源（理论上不该有）也保留，别丢结果
+    for (final e in grouped.entries) {
+      out.putIfAbsent(e.key, () => e.value);
+    }
+    return out;
+  }
+
+  Map<String, List<Book>>? _readCache(String kw) {
+    final at = _cacheAt[kw];
+    if (at == null) return null;
+    if (DateTime.now().difference(at) > cacheTtl) {
+      _cache.remove(kw);
+      _cacheAt.remove(kw);
+      return null;
+    }
+    return _cache[kw];
   }
 
   void clear() {
@@ -193,7 +306,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget _buildBody(BuildContext context, SearchState searchState) {
     final c = context.appColors;
 
-    if (searchState.isLoading) {
+    // 只有「一个结果都还没有」时才占满屏转圈。
+    // 渐进出结果后 isLoading 仍可能为 true（慢源还没回），
+    // 若此时还走全屏加载态，已回来的结果就又被盖住了。
+    if (searchState.isLoading && searchState.results.isEmpty) {
       return const AppLoadingState(message: AppStrings.searching);
     }
 
@@ -248,6 +364,49 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final groupedResults = searchState.groupedResults;
     final sourceIds = groupedResults.keys.toList();
 
+    return Column(
+      children: [
+        // 慢源还在跑时给一条轻量提示，别让用户以为搜完了
+        if (searchState.isLoading)
+          Container(
+            width: double.infinity,
+            color: c.muted,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.mutedForeground,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '其他书源仍在搜索…',
+                  style: TextStyle(
+                    color: c.mutedForeground,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: _buildResultList(context, sourceIds, groupedResults, sources),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultList(
+    BuildContext context,
+    List<String> sourceIds,
+    Map<String, List<Book>> groupedResults,
+    List<SourceRule> sources,
+  ) {
+    final c = context.appColors;
     return ListView.builder(
       padding: const EdgeInsets.all(8),
       itemCount: sourceIds.length,

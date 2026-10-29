@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:logger/logger.dart';
 
 import '../../data/models/book.dart';
@@ -93,10 +94,30 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
   /// 响应形态：`{books: [{id,title,author,narrator,cover,...}], total?}`。
   /// Edge 失败/为空时兜底 tingshu8 `lrts.php?name=`（字节码 #18064；
   /// 无 429 限流，但代理侧搜索结果不稳定——2026-10-16 实测可能为空列表）。
+  ///
+  /// Edge `lrts-search` 在服务端已损坏（实测返回
+  /// `{"error":"html is not defined","books":[]}`），
+  /// 但每次搜索仍会先打它两次再兜底 —— 白白多两趟往返。
+  /// 记录「坏到什么时候」，期间直接走 PHP 兜底。
+  static DateTime? _edgeSearchBrokenUntil;
+
+  /// 供测试重置。
+  @visibleForTesting
+  static void resetEdgeSearchHealth() => _edgeSearchBrokenUntil = null;
+
+  static bool get _edgeSearchBroken =>
+      _edgeSearchBrokenUntil != null &&
+      DateTime.now().isBefore(_edgeSearchBrokenUntil!);
+
   @override
   Future<List<Book>> search(SourceRule source, String keyword) async {
     final kw = keyword.trim();
     if (kw.isEmpty) return [];
+
+    if (_edgeSearchBroken) {
+      _logger.d('lrts-search 已知不可用，直接走 PHP 兜底');
+      return _searchViaPhp(source, kw);
+    }
 
     // 聆阅同款分页（#18069：`lrts-search?name=&page=`）：取两页合并去重。
     final encoded = Uri.encodeComponent(kw);
@@ -107,6 +128,12 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       if (body == null) break;
       try {
         final json = jsonDecode(body) as Map<String, dynamic>;
+        // 服务端报错（html is not defined）→ 标记 10 分钟内不再尝试
+        if (json['error'] != null) {
+          _edgeSearchBrokenUntil = DateTime.now().add(const Duration(minutes: 10));
+          _logger.w('lrts-search 服务端报错，改走 PHP 兜底: ${json['error']}');
+          break;
+        }
         final books = parseSearchResult(source, json);
         if (books.isEmpty) break;
         for (final b in books) {
