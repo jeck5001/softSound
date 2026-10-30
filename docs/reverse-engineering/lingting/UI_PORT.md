@@ -2,6 +2,21 @@
 
 本文记录把「聆阅 FM」（`聆听.apk`）的 UI 体系移植到本项目所做的改动、证据与已知限制。
 
+## 目录
+
+| 章节 | 内容 |
+|---|---|
+| §1 | 设计系统（`lib/theme/`：色板、主题、组件） |
+| §2 | 底部导航重构 |
+| §3 | 播放器高级功能 |
+| §4 | 验证结果 |
+| §5 | 下载/缓存数据层 |
+| §6 | **已知限制 + 逐轮移植记录（体量最大）** |
+
+> §6 按时间累积，每小节是一次具体改动或用户反馈的根因与实测证据。
+> 查某个功能为什么这么做：直接搜功能名、`tingshu_` 键名，或文件末尾的
+> §6.4x–§6.5x（最近几轮）。
+
 ## 1. 设计系统（新增 `lib/theme/`）
 
 | 文件 | 作用 |
@@ -31,11 +46,41 @@
 
 ### 存储键对齐
 
-与聆阅保持一致，便于将来数据互通：
+与聆阅保持一致，便于将来数据互通。字节码里共 **25 个 `tingshu_*` 键**，
+本项目已对齐 **17 个**（`grep -rl 'tingshu_<key>' lib/` 可复核）：
 
-- `tingshu_theme`（light / dark）
-- `tingshu_accent`（default / blue / green / red / orange）
-- `shu_*` 系列（播放设置）
+| 键 | 取值 / 说明 | 实现位置 |
+|---|---|---|
+| `tingshu_theme` | light / dark | `lib/theme/theme_controller.dart` |
+| `tingshu_accent` | default / blue / green / red / orange | `lib/theme/theme_controller.dart` |
+| `tingshu_active_source` | 当前书源 id | `lib/services/app_sources.dart` |
+| `tingshu_animations_enabled` | 动效总开关 | `lib/main.dart` |
+| `tingshu_tap_fx` | 点击粒子特效 | `lib/main.dart` |
+| `tingshu_shelf_view` | grid / list | `lib/features/bookshelf/shelf_preferences.dart` |
+| `tingshu_shelf_sort` | added / rating / title | `lib/features/bookshelf/shelf_preferences.dart` |
+| `tingshu_playback_speed` | 倍速 | `lib/theme/playback_settings.dart` |
+| `tingshu_audio_quality` | 128 / 320 / flac | `lib/theme/playback_settings.dart` |
+| `tingshu_audio_mixing` | 与其他 App 同时播放 | `lib/theme/playback_settings.dart` |
+| `tingshu_volume_boost_enabled` | 音量增强开关 | `lib/theme/playback_settings.dart` |
+| `tingshu_volume_boost_gain` | 增强增益 | `lib/theme/playback_settings.dart` |
+| `tingshu_boost_level` | 增强档位 | `lib/theme/playback_settings.dart` |
+| `tingshu_chapter_order` | 章节排序 | `lib/theme/playback_settings.dart` |
+| `tingshu_skip_intro` | 跳过片头 | `lib/theme/playback_settings.dart` |
+| `tingshu_skip_outro` | 跳过片尾 | `lib/theme/playback_settings.dart` |
+| `tingshu_remote_config_cache_v1` | 远端配置缓存 | `lib/services/remote_config_api.dart` |
+
+**未搬的 8 个键（逐条留档原因）**：
+
+| 键 | 为什么不搬 |
+|---|---|
+| `tingshu_favorites` / `tingshu_history` | 聆阅用 AsyncStorage 存收藏/历史；本项目落 SQLite（drift），职责已覆盖，不再复制一份 |
+| `tingshu_favorites_backup` / `tingshu_history_backup` | 聆阅的**双写冗余**（#16861/#16879：改收藏/历史时把同一份数据 `JSON.stringify` 同时写两个键）。SQLite 已有事务与备份语义，无需要 |
+| `tingshu_device_id` / `lingyue_my_sync_code_v1` | 多设备同步用；本项目未实现多设备同步（见分析报告） |
+| `tingshu_keepalive_hint_v1` | 值为 `'1'`，标记「保活引导已展示」以实现**只提示一次**。本项目保活引导只在设置页手动点开、不自动弹（见 §6.44），所以该标志无意义 |
+| `tingshu_sleep_stopped` | 睡眠定时停止标志（字符串 `'true'`）。本项目睡眠定时有完整内存态 + `sleepTimerEnding` 派生，不需要跨启动恢复 |
+| `tingshu_book_cache` | 字节码里**只有设置批量读写、没有其他使用点**（死键），不确定语义故不猜 |
+
+`shu_*` 系列为播放设置的另一组键（本项目按 `tingshu_*` 命名对齐）。
 
 ## 2. 底部导航重构
 
@@ -668,7 +713,7 @@ $ flutter test      →  All tests passed（343 个；上一轮 322 + 本轮新�
 ### 6.29 全页面 1:1 复刻聆阅视觉（2026-10-16 第二轮，截图取色驱动）
 
 方法升级：**把聆阅本尊装上模拟器逐页截图**（`screenshots/lingyue_ref/`），
-PIL 逐点取色，再按截图复刻。新增共享组件库 `lib/theme/lingyue_widgets.dart`
+PIL 逐点取色，再按截图复刻。新增共享组件库 `lib/theme/brand_widgets.dart`
 （硬阴影 `lyHardShadow` / 描边封面 `LyCover` / 黑金 chip / meta chip /
 淡紫 icon 按钮 / 分段控件 / 粗野卡）。
 
@@ -706,7 +751,7 @@ PIL 逐点取色，再按截图复刻。新增共享组件库 `lib/theme/lingyue
 
 **落地**：
 
-- `lib/services/lingyue_sources.dart`：`LySource`（源1/源2 语义 + `bookPrefix`）、
+- `lib/services/app_sources.dart`：`LySource`（源1/源2 语义 + `bookPrefix`）、
   `ActiveSourceController`（SharedPreferences 持久化，键与字节码逐字一致）、
   **双源分类树**（165 条字节码内联字面量脚本导出，零手抄）
 - `lib/services/lrts_category_api.dart`：Edge 优先 + 直连 HTML 正则兜底（http→https 升级、
@@ -1232,7 +1277,5 @@ const KEYS = { sv: 'tingshu_shelf_view', so: 'tingshu_shelf_sort' };
 截图 screenshots/68_shelf_view_persist.png
 ```
 
-顺带确认：25 个 `tingshu_*` 键里我们已实现 21 个；剩下
-`tingshu_favorites_backup` / `tingshu_history_backup` 是聆阅的**双写冗余**
-（#16861/#16879：改收藏/历史时把同一份数据 `JSON.stringify` 写进两个键），
-我们数据已落 SQLite，不需要再复制一份 JSON，未搬。
+顺带做了一次全局键审计：字节码共 25 个 `tingshu_*` 键，本项目已对齐 17 个，
+未搬的 8 个逐条留了原因（见本文开头「存储键对齐」表）。
