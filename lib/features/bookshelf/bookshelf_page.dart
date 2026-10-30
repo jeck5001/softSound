@@ -12,24 +12,7 @@ import '../book_detail/book_detail_page.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_strings.dart';
 import '../../theme/app_widgets.dart';
-
-/// 书架视图模式 —— 对齐聆阅的「网格 / 列表」。
-enum ShelfView { grid, list }
-
-/// 书架排序方式 —— 对齐聆阅的排序项。
-enum ShelfSort {
-  /// 最近加入（数据源默认顺序）
-  recent,
-
-  /// 按书名
-  name,
-}
-
-/// 书架视图模式（会话内状态，不持久化）。
-final shelfViewProvider = StateProvider<ShelfView>((ref) => ShelfView.grid);
-
-/// 书架排序方式。
-final shelfSortProvider = StateProvider<ShelfSort>((ref) => ShelfSort.recent);
+import 'shelf_preferences.dart';
 
 /// 书架状态
 class BookshelfState {
@@ -112,8 +95,9 @@ class BookshelfPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookshelfState = ref.watch(bookshelfProvider);
-    final view = ref.watch(shelfViewProvider);
-    final sort = ref.watch(shelfSortProvider);
+    final prefs = ref.watch(shelfPreferencesProvider);
+    final view = prefs.view;
+    final sort = prefs.sort;
 
     return Scaffold(
       appBar: AppBar(
@@ -128,8 +112,11 @@ class BookshelfPage extends ConsumerWidget {
               tooltip: view == ShelfView.grid
                   ? AppStrings.shelfViewList
                   : AppStrings.shelfViewGrid,
-              onPressed: () => ref.read(shelfViewProvider.notifier).state =
-                  view == ShelfView.grid ? ShelfView.list : ShelfView.grid,
+              onPressed: () => ref
+                  .read(shelfPreferencesProvider.notifier)
+                  .setView(
+                    view == ShelfView.grid ? ShelfView.list : ShelfView.grid,
+                  ),
             ),
             // 排序（聆阅：最新 / 最热）
             PopupMenuButton<ShelfSort>(
@@ -137,15 +124,15 @@ class BookshelfPage extends ConsumerWidget {
               tooltip: AppStrings.shelfSort,
               initialValue: sort,
               onSelected: (v) =>
-                  ref.read(shelfSortProvider.notifier).state = v,
+                  ref.read(shelfPreferencesProvider.notifier).setSort(v),
               itemBuilder: (context) => const [
                 PopupMenuItem(
-                  value: ShelfSort.recent,
-                  child: Text(AppStrings.filterNewest),
+                  value: ShelfSort.added,
+                  child: Text(AppStrings.shelfSortAdded),
                 ),
                 PopupMenuItem(
-                  value: ShelfSort.name,
-                  child: Text(AppStrings.filterHottest),
+                  value: ShelfSort.title,
+                  child: Text(AppStrings.shelfSortTitle),
                 ),
               ],
             ),
@@ -165,8 +152,8 @@ class BookshelfPage extends ConsumerWidget {
       return _buildEmptyState(context);
     }
 
-    final books = _sorted(state.books, ref.watch(shelfSortProvider));
-    final view = ref.watch(shelfViewProvider);
+    final books = _sorted(state.books, ref.watch(shelfPreferencesProvider).sort);
+    final view = ref.watch(shelfPreferencesProvider).view;
 
     return RefreshIndicator(
       onRefresh: () => ref.read(bookshelfProvider.notifier).loadBooks(),
@@ -210,9 +197,9 @@ class BookshelfPage extends ConsumerWidget {
   List<Book> _sorted(List<Book> books, ShelfSort sort) {
     final copy = [...books];
     switch (sort) {
-      case ShelfSort.name:
+      case ShelfSort.title:
         copy.sort((a, b) => a.name.compareTo(b.name));
-      case ShelfSort.recent:
+      case ShelfSort.added:
         // 保持数据源顺序（仓库已按加入/更新时间倒序返回）
         break;
     }

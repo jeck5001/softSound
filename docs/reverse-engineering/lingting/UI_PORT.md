@@ -1187,3 +1187,52 @@ $ cmd media_session dispatch next
 ```
 
 截图 `screenshots/67_search_relevant.png`。
+
+### 6.50 书架视图/排序持久化（`tingshu_shelf_view` / `tingshu_shelf_sort`）
+
+**问题**：这两个选择此前只存在内存里（代码注释还写着「会话内状态，不持久化」），
+重启后回到网格 + 数据源顺序。聆阅是存档的。
+
+**字节码契约**（#21662 env slot 23/24，逐字）：
+
+```js
+const KEYS = { sv: 'tingshu_shelf_view', so: 'tingshu_shelf_sort' };
+// 读：AsyncStorage.multiGet([sv, so]).then(...).catch(...)
+// 写：AsyncStorage.setItem(sv, v).catch(...) / setItem(so, v).catch(...)
+```
+
+取值（#21669 内联对象逐字）：
+
+| 键 | 取值 | 标签 |
+|---|---|---|
+| `tingshu_shelf_view` | `grid` / `list` | 网格 / 列表（默认 `grid`） |
+| `tingshu_shelf_sort` | `added` / `rating` / `title` | 最近添加 / 评分排序 / 书名排序（默认 `added`） |
+
+**实现**（`lib/features/bookshelf/shelf_preferences.dart`）：
+
+- `ShelfView` / `ShelfSort` 枚举带 `wire` 字面量，与聆阅逐字一致
+  （不能改名，否则读不到用户已有的存档）。
+- 读写用 `tingshu_shelf_view` / `tingshu_shelf_sort`；用 `get` + 类型判断，
+  脏数据（类型不对、值不认识）回落默认值而不是抛。
+- 读到聆阅的 `rating` 时**回落默认**，不崩。
+
+**未实现 `rating`（明确留档）**：真实书籍详情接口
+（`/lrts-info`，抓包 `test/fixtures/lrts_bookinfo_real.json`）**没有评分字段**，
+评分只出现在首页/分类的推荐流（`lrts_home_api.dart` / `lrts_category_api.dart`
+里的 `rating`），落库后拿不到。搬一个永远排不出顺序的选项只会让用户困惑，
+所以只提供 `added` / `title` 两项，并在枚举注释里写明原因。
+
+**设备实测**（Android 15 模拟器，debug 包）：
+
+```
+切到「列表」+「书名排序」后读盘：
+  flutter.tingshu_shelf_view = list
+  flutter.tingshu_shelf_sort = title
+重启 App → 书架仍是列表视图，右上角图标显示「网格」（= 点它会切回网格）✅
+截图 screenshots/68_shelf_view_persist.png
+```
+
+顺带确认：25 个 `tingshu_*` 键里我们已实现 21 个；剩下
+`tingshu_favorites_backup` / `tingshu_history_backup` 是聆阅的**双写冗余**
+（#16861/#16879：改收藏/历史时把同一份数据 `JSON.stringify` 写进两个键），
+我们数据已落 SQLite，不需要再复制一份 JSON，未搬。

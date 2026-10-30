@@ -188,6 +188,10 @@ class AppStrings {
   static const filterNewest = '最新';
   static const filterHottest = '最热';
 
+  /// 书架排序项 —— 对齐聆阅字节码 #21669 的内联标签。
+  static const shelfSortAdded = '最近添加';
+  static const shelfSortTitle = '书名排序';
+
   // ---------------------------------------------------------------- 历史
 
   static const listenHistory = '听书记录';
