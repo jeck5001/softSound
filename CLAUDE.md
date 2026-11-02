@@ -22,7 +22,11 @@
 7. **搜索请求不要全并发**：Edge 函数有**项目级并发限制**
    （429 `projectConcurrencyLimitExceeded`），全并发反而更慢。
    用 `SearchNotifier.maxConcurrent`（3 路）+ 单源超时。
-8. **不要用 UI 进度条判断"有没有声音"**：`just_audio` 的 `positionStream`
+8. **音频属性 flags 只能是 `AndroidAudioFlags.none`**：绝不能设
+   `audibilityEnforced`（= `AUDIO_FLAG_AUDIBILITY_ENFORCED`，紧急广播专用）。
+   它会**忽略用户的音量与静音设置** → 用户反馈「音量关到 0 还出声、关不掉」。
+   也不要自己调 `_player.setVolume()`，音量归系统管。
+9. **不要用 UI 进度条判断"有没有声音"**：`just_audio` 的 `positionStream`
    是本地按时间插值算的，进度条会走不代表平台层在出声。要看
    `adb shell dumpsys media.audio_flinger` 里本进程有没有 `A` 状态的 track。
    起播前必须走 `_ensureAudioSession()`（`configure` + `setActive`）——
@@ -32,7 +36,7 @@
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 606 用例全过
+flutter test                       # 基线 608 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
