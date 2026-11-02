@@ -1279,3 +1279,65 @@ const KEYS = { sv: 'tingshu_shelf_view', so: 'tingshu_shelf_sort' };
 
 顺带做了一次全局键审计：字节码共 25 个 `tingshu_*` 键，本项目已对齐 17 个，
 未搬的 8 个逐条留了原因（见本文开头「存储键对齐」表）。
+
+### 6.51 首播没声音、进度条却在走（2026-11-02 用户真机反馈）
+
+**现象**：第一次播放没有声音，但进度条正常前进。
+
+**关键认知**：`just_audio` 的 `positionStream` 是**本地按时间插值**算的
+（`createPositionStream(steps: 800, minPeriod: 16ms, maxPeriod: 200ms)`，
+见 `just_audio-0.9.46/lib/just_audio.dart:610`）。
+所以「进度条在走」**完全不能证明平台层在出声** —— 它只是 Dart 侧
+按 `updateTime` 外推出来的位置。这个认知把排查方向从"解码/网络"
+直接推到"音频输出链路"。
+
+**真因**：`AudioSessionConfigurator.apply()` 在默认配置下**一次都没执行过**：
+
+```dart
+bool _audioMixing = false;           // 初值 false
+...
+if (_audioMixing != audioMixing) {   // 设置默认也是 false → 恒不成立
+  _audioMixing = audioMixing;
+  AudioSessionConfigurator.apply(mixing: audioMixing);
+}
+```
+
+而这个配置器正是设置音频输出前提的地方：
+
+- `AndroidAudioUsage.media`（音频用途，决定路由到哪个输出）
+- `AndroidAudioFocusGainType.gain`（申请音频焦点）
+- `AndroidAudioFlags.audibilityEnforced`（要求"必须可听"）
+
+没它，音频会话就停在 `audio_session` 的兜底配置上。更隐蔽的是：
+`just_audio.play()` 内部 `if (!_handleAudioSessionActivation || await audioSession.setActive(true))`，
+`setActive` **失败时 `play()` 会静默不动**（只把 `playing` 翻回 false 并返回），
+不抛异常、不打日志 —— 外部完全看不出问题。
+
+**修复**：
+
+| 改动 | 原因 |
+|---|---|
+| `_audioMixing` 改 `bool?` | 用 `null` 区分「从未配置」与「配置为不混音」 |
+| 新增 `_ensureAudioSession()` | 显式 `configure` + `setActive(true)`，失败记日志 |
+| `play()` 与 `_loadAndPlayChapter()` 都调用 | 后者直接调 `_player.play()`，**绕过** `play()` |
+| 播放后打印 `processingState` + `androidAudioSessionId` | `playing` 只是本地标记，这两个才反映平台层 |
+
+**设备实测**（Android 15 模拟器）：
+
+```
+# 日志（修复前这条从未出现过）
+I flutter : 音频会话已配置: mixing=false
+
+# 平台层：确有活跃输出轨道
+$ adb shell dumpsys media.audio_flinger
+  Client: 3624  com.softSound.soft_sound
+  session 81  cnt 1  3624  10208  com.softSound.soft_sound
+  track 56  yes  3624  81  16 A  0x000 ... 44100  ← A=active, yes=非 standby
+  Standby: no
+  11-02 10:14:38.275 AT::add ... 56  no  3624  81  ← 与 _ensureAudioSession 同刻
+```
+
+即：修复前 `AudioFlinger` 里**没有**本应用的输出轨道，修复后有了。
+
+> 教训：判断"有没有声音"不能看 UI 进度条，要看
+> `dumpsys media.audio_flinger` 里本进程是否有 `A` 状态的 track。
