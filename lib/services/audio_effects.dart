@@ -133,8 +133,14 @@ class AudioSessionConfigurator {
           contentType: AndroidAudioContentType.music,
           // game 语义不请求独占焦点 → 可与他人共存
           usage: mixing ? AndroidAudioUsage.game : AndroidAudioUsage.media,
-          // 独占时要求强制可听；混音时不做要求
-          flags: mixing ? AndroidAudioFlags.none : AndroidAudioFlags.audibilityEnforced,
+          // 绝不能用 `audibilityEnforced`。
+          //
+          // `AUDIO_FLAG_AUDIBILITY_ENFORCED` 是**紧急广播/报警音**专用标志：
+          // 强制输出到扬声器并**忽略用户的音量与静音设置**。
+          // 曾在这里加它想「确保能出声」，结果用户反馈
+          // 「音量关到 0 还是出声、关不掉」（2026-11-02）。
+          // 普通媒体播放必须用 `none`，让系统的音量键/静音真正生效。
+          flags: AndroidAudioFlags.none,
         ),
         // 混音时不因其他 App 播放而暂停；独占时暂停
         androidWillPauseWhenDucked: !mixing,

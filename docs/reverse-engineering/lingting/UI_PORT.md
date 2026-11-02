@@ -1341,3 +1341,47 @@ $ adb shell dumpsys media.audio_flinger
 
 > 教训：判断"有没有声音"不能看 UI 进度条，要看
 > `dumpsys media.audio_flinger` 里本进程是否有 `A` 状态的 track。
+
+### 6.52 音量关到 0 仍出声、音量关不掉（2026-11-02 用户真机反馈）
+
+**现象**：把系统音量调到 0，App 还在出声；而且"音量关不掉"。
+
+**真因**：`AudioSessionConfigurator` 给音频属性设了
+`AndroidAudioFlags.audibilityEnforced`（= `AUDIO_FLAG_AUDIBILITY_ENFORCED`）。
+
+这个标志的官方语义是**紧急广播/报警音专用**：
+强制输出到扬声器，并**忽略用户的音量与静音设置**。
+我们当初（#63c8f33）加它是想"确保能出声"（配合上一轮的首播没声音），
+结果正好把系统音量键废掉了 —— 典型的"修 A 引入 B"。
+
+**修复**：`flags` 一律用 `AndroidAudioFlags.none`，把音量控制权完全交还系统。
+
+```dart
+androidAudioAttributes: AndroidAudioAttributes(
+  contentType: AndroidAudioContentType.music,
+  usage: mixing ? AndroidAudioUsage.game : AndroidAudioUsage.media,
+  flags: AndroidAudioFlags.none,   // ← 曾误用 audibilityEnforced
+),
+```
+
+同时确认 `LoudnessEnhancer`（音量增强）不影响静音语义：它是音效链上的增益，
+输出仍受系统音量约束，且默认关闭。项目里**没有任何** `_player.setVolume()` 调用
+（自调音量才是"关不掉"的另一种典型成因）。
+
+**设备实测**（Android 15 模拟器）—— 用 AudioFlinger 的音量列作为判据：
+
+```bash
+# 系统音量按到 0
+$ adb shell dumpsys audio | grep -A12 "^- STREAM_MUSIC:"
+   Muted: true
+   streamVolume:0
+
+# 本应用输出轨道：音量 -inf（负无穷 dB = 完全静音）
+$ adb shell dumpsys media.audio_flinger | grep 5036
+  60  yes  5036  89  20 A  ... 44100  3  1  2  -inf  ...   ← 修复后
+
+# 对照：修复前同位置是 -33（有声音）
+```
+
+再按音量加 8 格 → 轨道音量从 `-inf` 变 `-21`，声音恢复。
+即音量**完全跟随系统**，不再被 App 强行覆盖。

@@ -63,10 +63,26 @@ void main() {
           isTrue);
     });
 
-    test('独占模式要求可听（audibilityEnforced）', () {
+    test('绝不能设 audibilityEnforced（会无视系统音量/静音）', () {
       final src = read('lib/services/audio_effects.dart');
-      expect(src.contains('audibilityEnforced'), isTrue,
-          reason: '不要求可听时，系统可能把音频路由到无声输出');
+      // AUDIO_FLAG_AUDIBILITY_ENFORCED 是紧急广播专用：强制出声、忽略用户音量。
+      // 只在注释里出现可以，代码里赋值不行。
+      final code = src
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(
+        code.contains('AndroidAudioFlags.audibilityEnforced'),
+        isFalse,
+        reason: '用户实测：音量关到 0 仍出声、关不掉（2026-11-02）',
+      );
+      expect(code.contains('flags: AndroidAudioFlags.none'), isTrue);
+    });
+
+    test('静音/音量键必须由系统掌管，不自行设音量', () {
+      final src = read('lib/services/player_service.dart');
+      expect(src.contains('_player.setVolume'), isFalse,
+          reason: '自己调 setVolume 会让「音量关到 0 仍出声」或「调不动」');
     });
   });
 }
