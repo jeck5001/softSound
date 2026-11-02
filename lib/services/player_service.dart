@@ -371,15 +371,21 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     // 音量增强：走原生 LoudnessEnhancer（just_audio 的 setVolume 无法放大）
     _applyVolumeBoost(volumeBoostEnabled, volumeBoostGain);
     _quality = quality;
-    // 混音：切换音频焦点策略（对应聆阅「与其他App同时播放」）
+    // 混音：切换音频焦点策略（对应聆阅「与其他App同时播放」）。
+    // 首次必须执行（`_audioMixing` 初值为 null），否则音频属性/焦点从不设置。
     if (_audioMixing != audioMixing) {
       _audioMixing = audioMixing;
-      AudioSessionConfigurator.apply(mixing: audioMixing);
+      unawaited(AudioSessionConfigurator.apply(mixing: audioMixing));
     }
   }
 
   /// 当前混音开关状态。
-  bool _audioMixing = false;
+  ///
+  /// 用可空是为了区分「从未配置过」和「配置为不混音」——
+  /// 初值 `false` 时 `if (_audioMixing != audioMixing)` 恒不成立，
+  /// `AudioSessionConfigurator.apply()` 永远不执行，
+  /// 音频会话就停在 audio_session 的兜底配置上（用户实测：首播没声音）。
+  bool? _audioMixing;
 
   /// 当前音质偏好（透传给适配器）。
   AudioQuality? _quality;
@@ -701,8 +707,16 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         return;
       }
 
+      // 直接调 _player.play() 会绕过 play()，这里补上会话激活，
+      // 否则首次播放可能只翻 playing 标记而平台层没真正出声。
+      await _ensureAudioSession();
       await _player.play();
-      _logger.d('Playback started successfully');
+      // 平台层真起来了才算出声：playing 是本地标记，processingState 才是解码器状态。
+      _logger.d(
+        'Playback started: playing=${_player.playing}, '
+        'state=${_player.processingState}, '
+        'sessionId=${_player.androidAudioSessionId}',
+      );
       state = state.copyWith(isLoading: false, error: null);
 
       // 字幕：先清占位，再异步拉取（尽力而为，不阻塞播放）。
@@ -795,8 +809,29 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   ///
   /// 恢复会话后音频源还没装载（`restoreSession` 只备好章节与进度），
   /// 此时直接 `_player.play()` 是空操作 —— 需要先装载当前章节。
+  /// 确保音频会话已配置并激活（音频输出的前提）。
+  ///
+  /// `just_audio.play()` 内部会调 `audioSession.setActive(true)`，但如果
+  /// 会话从未 `configure`，它用的是 audio_session 的兜底配置；
+  /// 而且 `setActive` 失败时 `play()` 会**静默不动**（只把 playing 翻回去），
+  /// 表现就是「进度条在走但没声音」。
+  Future<void> _ensureAudioSession() async {
+    if (kIsWeb) return;
+    try {
+      await AudioSessionConfigurator.apply(mixing: _audioMixing ?? false);
+      final session = await AudioSession.instance;
+      final ok = await session.setActive(true);
+      if (!ok) {
+        _logger.w('音频会话激活被拒绝（可能被其他 App 占用音频焦点）');
+      }
+    } catch (e) {
+      _logger.w('音频会话激活失败', error: e);
+    }
+  }
+
   Future<void> play() async {
     _playRequested = true;
+    await _ensureAudioSession();
     if (state.isCompleted) {
       // 同上：播完后再按播放，应当从头重播，而不是原地不动
       await _player.seek(Duration.zero);
