@@ -74,7 +74,7 @@
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 663 用例全过
+flutter test                       # 基线 645 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
