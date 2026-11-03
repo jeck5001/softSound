@@ -3,7 +3,7 @@
   "version_name": "0.0.4",
   "update_description": "修复目录不全（重试叠加）与播放记录丢失（保存时机）",
   "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.4/qingting-0.0.4.apk",
-  "sha256": "92daadce04dbd37bf0e9efbb95d3d8276d6149c8942bf762d233698a15f3b3c7",
+  "sha256": "7e5fec86d76039a77d12062ee49202c64379b1e119e343b476401dadea4d3018",
   "force_update": false,
   "min_supported_code": 1
 }

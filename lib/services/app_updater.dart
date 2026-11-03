@@ -270,21 +270,24 @@ Future<String> sha256OfFile(File f) async {
 // 聆阅的 remote-config（那会把应用替换成聆阅）。
 
 /// 自更新清单地址。
-/// 主清单地址：**GitHub raw**。
+/// 主清单地址：**GitHub raw（refs/heads 形式）**。
 ///
-/// 选型经过实测（都走本机代理 127.0.0.1:7890）：
-/// - `raw.githubusercontent.com`：2.4 秒返回，**内容实时**（无缓存延迟）
-/// - `cdn.jsdelivr.net@main`：1.0 秒返回，但**有缓存延迟** ——
-///   实测发版后仍返回旧 sha256，会导致用户下载新包后校验失败
+/// ⚠️ 必须用 `refs/heads/main` 这个形式，**不要**用 `/main/`。
+/// 实测（2026-11-04）两种形式指向同一文件，但缓存行为完全不同：
 ///
-/// 所以主地址用 raw，jsDelivr 仅作兜底（它能覆盖 raw 偶发超时的场景）。
+/// | 形式 | 发版后立即读 |
+/// |---|---|
+/// | `.../raw/main/manifest.json` | **旧内容**（v0.0.3，加了 cache-buster 依旧） |
+/// | `.../raw/refs/heads/main/manifest.json` | 新内容（v0.0.4）✅ |
+///
+/// 用错形式的后果：用户**永远收不到更新**，且没有任何报错。
 const String kUpdateManifestUrl =
-    'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json';
+    'https://raw.githubusercontent.com/jeck5001/softSound/refs/heads/main/manifest.json';
 
 /// 备用清单地址（主地址失败时依次尝试）。
 const List<String> kUpdateManifestFallbacks = [
-  'https://raw.githubusercontent.com/jeck5001/softSound/refs/heads/main/manifest.json',
   'https://cdn.jsdelivr.net/gh/jeck5001/softSound@main/manifest.json',
+  'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json',
 ];
 
 /// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。

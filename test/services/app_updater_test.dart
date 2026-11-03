@@ -142,9 +142,21 @@ void main() {
   });
 
   group('清单地址与分发（GitHub Releases 托管）', () {
-    test('主地址是 GitHub raw 且指向 main 分支', () {
+    test('主地址必须用 refs/heads 形式（/main/ 会读到旧缓存）', () {
       final src = File('lib/services/app_updater.dart').readAsStringSync();
-      expect(src.contains('raw.githubusercontent.com/jeck5001/softSound/main/manifest.json'), isTrue);
+      final m = RegExp(r"kUpdateManifestUrl =\s*'([^']+)'").firstMatch(src);
+      expect(m, isNotNull);
+      final url = m!.group(1)!;
+      expect(
+        url.contains('refs/heads/main'),
+        isTrue,
+        reason: '实测 /main/ 形式发版后仍返回旧内容 → 用户永远收不到更新',
+      );
+      expect(
+        RegExp(r'/raw/main/').hasMatch(url),
+        isFalse,
+        reason: 'raw /main/ 有缓存问题，不要用它作主地址',
+      );
     });
 
     test('有备用地址（raw 会间歇性超时）', () {
