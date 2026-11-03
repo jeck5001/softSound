@@ -92,6 +92,10 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
 
       final detailBook = await _parser.getBookDetail(source, book);
       if (_isCancelled || !mounted) return;
+      // 详情拉失败（服务端 500/429、网络断开）时，别让标题停在占位串上。
+      // 占位 Book 的特征：name 是纯数字 id（来自榜单页，只有 id 没有书名）。
+      final looksPlaceholder = int.tryParse(book.name) != null;
+      final detailFailed = detailBook == null && looksPlaceholder;
 
       final chapters = await _parser.getChapterList(source, book);
       if (_isCancelled || !mounted) return;
@@ -103,7 +107,11 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
         isInBookshelf: isInBookshelf,
         savedChapterIndex: progress?.chapterIndex,
         savedPosition: progress?.position,
-        error: chapters.isEmpty ? AppStrings.chapterNotFound : null,
+        // 优先报"服务不可用"，因为那才是用户能行动的原因；
+        // 只有请求成功但没有章节时才说"未找到章节"。
+        error: detailFailed
+            ? AppStrings.sourceUnavailable
+            : (chapters.isEmpty ? AppStrings.chapterNotFound : null),
       );
     } catch (e) {
       if (_isCancelled || !mounted) return;

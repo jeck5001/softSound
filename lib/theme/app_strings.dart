@@ -510,6 +510,9 @@ class AppStrings {
   static const recommendSources = '推荐书源';
   static const noSources = '暂无书源';
   static const addSource = '添加书源';
+  /// 书源服务端暂时不可用（上游 Edge 代理 500/429）。
+  static const sourceUnavailable = '书源暂时不可用，请稍后下拉刷新重试';
+
   static const chapterNotFound = '未找到章节';
   static const noIntro = '暂无简介';
   static const cancelTimer = '取消定时';

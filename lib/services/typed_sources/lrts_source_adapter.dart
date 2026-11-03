@@ -263,12 +263,22 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     final bookId = book.detailUrl;
     if (bookId.trim().isEmpty) return null;
 
+    _lastGetFailed = false;
     final response = await _get('/ajax/getBookInfo?id=$bookId', source);
-    if (response == null) return null;
+    if (response == null) {
+      // response == null 有两种含义：
+      // 1. 网络/服务端故障（_lastGetFailed == true）→ 应提示"稍后重试"
+      // 2. 上游返回了空 → 视为该书不存在
+      return null;
+    }
 
     try {
       final json = jsonDecode(response) as Map<String, dynamic>;
-      return parseBookInfo(source, bookId, json) ?? book;
+      // 注意：这里**不能** `?? book` 回退。
+      // 旧实现回退成占位 book（name = id），详情页于是把占位名当成书名，
+      // 用户看到的就是永远停在「加载书籍信息…」—— 正是本次反馈的现象。
+      // 解析不出来就如实返回 null，让 UI 报「书源暂时不可用」。
+      return parseBookInfo(source, bookId, json);
     } catch (e) {
       _logger.w('lrts getBookDetail parse failed', error: e);
       return null;
@@ -580,25 +590,68 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
   // ------------------------------------------------------------------ 内部
 
   Future<String?> _get(String path, SourceRule source) async {
-    try {
-      final response = await _dio.get<String>(
-        '$_base$path',
-        options: Options(
-          responseType: ResponseType.plain,
-          validateStatus: (code) => code != null && code < 500,
-          headers: {
-            'User-Agent': _userAgent,
-            'Referer': '$_base/',
-            ...?source.header,
-          },
-        ),
-      );
-      return response.data;
-    } catch (e) {
-      _logger.w('lrts request failed: $path', error: e);
-      return null;
+    // Edge 代理层的不稳定是**已知现实**（实测 `lrts-menu` 会返回
+    // 500 `InvalidWorkerCreation: worker boot error`、`lrts-detail`
+    // 返回 429 限流）。这两种都是**暂时性**的，重试往往能成功，
+    // 而单次失败就直接放弃会让用户看到「加载书籍信息…」卡住。
+    for (var attempt = 0; attempt < _maxGetAttempts; attempt++) {
+      try {
+        final response = await _dio.get<String>(
+          '$_base$path',
+          options: Options(
+            responseType: ResponseType.plain,
+            // 5xx 也要重试，所以这里不拦 5xx，交给下面判断
+            validateStatus: (code) => code != null,
+            headers: {
+              'User-Agent': _userAgent,
+              'Referer': '$_base/',
+              ...?source.header,
+            },
+          ),
+        );
+        final code = response.statusCode ?? 0;
+        if (code == 200) {
+          // 200 但 body 是上游错误 JSON（apiStatus != 0）时不算网络失败，
+          // 交由调用方按业务错误处理。
+          return response.data;
+        }
+        if (code == 429 || code >= 500) {
+          _logger.w('lrts 第 ${attempt + 1} 次失败 ($code): $path');
+          if (attempt < _maxGetAttempts - 1) {
+            await Future<void>.delayed(
+              Duration(milliseconds: 300 * (1 << attempt)),
+            );
+            continue;
+          }
+          _lastGetFailed = true;
+          return null;
+        }
+        // 其他 4xx（如 404）不重试
+        _lastGetFailed = true;
+        return null;
+      } catch (e) {
+        _logger.w('lrts request failed: $path', error: e);
+        if (attempt < _maxGetAttempts - 1) {
+          await Future<void>.delayed(
+            Duration(milliseconds: 300 * (1 << attempt)),
+          );
+          continue;
+        }
+        _lastGetFailed = true;
+        return null;
+      }
     }
+    return null;
   }
+
+  /// 单次请求最多尝试几次（1 次 + 2 次重试）。
+  static const int _maxGetAttempts = 3;
+
+  /// 上一次 [_get] 是否因网络/服务端故障失败（用于区分"书没了"与"没连上"）。
+  bool _lastGetFailed = false;
+
+  /// 上一次详情/目录请求是否因服务端故障失败。
+  bool get lastFetchFailed => _lastGetFailed;
 
   String? _str(dynamic v) {
     if (v == null) return null;
