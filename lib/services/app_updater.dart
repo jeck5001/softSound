@@ -91,37 +91,62 @@ class AppUpdater {
   AppUpdater({
     required this.manifestUrl,
     required this.currentVersionCode,
+    this.fallbackUrls = const [],
     Dio? dio,
   }) : _dio = dio ?? Dio();
 
-  /// 自更新清单地址。为空 = 未配置 → UI 必须明确说"未配置"，
+  /// 所有候选清单地址（去重、保持顺序）。
+  List<String> get _candidates {
+    final out = <String>[];
+    for (final u in [manifestUrl, ...fallbackUrls]) {
+      if (u.startsWith('http') && !out.contains(u)) out.add(u);
+    }
+    return out;
+  }
+
+  /// 自更新清单地址（主）。为空 = 未配置 → UI 必须明确说"未配置"，
   /// **绝不能**回退到聆阅的地址。
   final String manifestUrl;
+
+  /// 备用清单地址（主地址不可达时依次尝试）。
+  ///
+  /// 实测 `raw.githubusercontent.com` 在部分网络下**间歇性超时**
+  /// （同一分钟内有 200 也有 000），单一地址会让"检查更新"像坏了一样。
+  final List<String> fallbackUrls;
   final int currentVersionCode;
   final Dio _dio;
 
   bool get isConfigured => manifestUrl.startsWith('http');
 
-  /// 拉取清单；失败返回 null。
+  /// 拉取清单；依次尝试主地址与备用地址，全部失败才返回 null。
   Future<UpdateManifest?> fetchManifest() async {
     if (!isConfigured) return null;
-    try {
-      final res = await _dio.get<String>(
-        manifestUrl,
-        options: Options(
-          responseType: ResponseType.plain,
-          // 清单必须实时：CDN 缓存会导致"检查不到新版本"
-          headers: {'Cache-Control': 'no-cache'},
-          receiveTimeout: const Duration(seconds: 15),
-        ),
-      );
-      final body = res.data;
-      if (body == null || body.trim().isEmpty) return null;
-      return UpdateManifest.tryParse(jsonDecode(body));
-    } catch (e) {
-      debugPrint('拉取更新清单失败: $e');
-      return null;
+    for (final url in _candidates) {
+      // 每个地址重试 2 次：GitHub raw 存在间歇性超时，
+      // 单次失败不代表真的不可用。
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final res = await _dio.get<String>(
+            url,
+            options: Options(
+              responseType: ResponseType.plain,
+              // 清单必须实时：CDN 缓存会导致"检查不到新版本"
+              headers: {'Cache-Control': 'no-cache'},
+              // 8 秒足够；太长会让用户以为卡死
+              receiveTimeout: const Duration(seconds: 8),
+              sendTimeout: const Duration(seconds: 8),
+            ),
+          );
+          final body = res.data;
+          if (body == null || body.trim().isEmpty) break;
+          final parsed = UpdateManifest.tryParse(jsonDecode(body));
+          if (parsed != null) return parsed;
+        } catch (e) {
+          debugPrint('拉取更新清单失败 ($url, 第 ${attempt + 1} 次): $e');
+        }
+      }
     }
+    return null;
   }
 
   /// 是否需要更新（清单版本号更大）。
@@ -205,8 +230,20 @@ Future<String> sha256OfFile(File f) async {
 // 聆阅的 remote-config（那会把应用替换成聆阅）。
 
 /// 自更新清单地址。
+/// 主清单地址：**jsDelivr CDN**（镜像 GitHub 仓库内容）。
+///
+/// 为什么不用 GitHub raw 作首选：实测在本机与模拟器上
+/// `raw.githubusercontent.com` **间歇性超时**（同一分钟内 200 / 000 交替，
+/// 20 秒无响应），而 jsDelivr 同一时刻 1.4 秒返回 200。
+/// 单一地址会让「检查更新」表现为"点了没反应"。
 const String kUpdateManifestUrl =
-    'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json';
+    'https://cdn.jsdelivr.net/gh/jeck5001/softSound@main/manifest.json';
+
+/// 备用清单地址（主地址失败时依次尝试）。
+const List<String> kUpdateManifestFallbacks = [
+  'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json',
+  'https://github.com/jeck5001/softSound/raw/main/manifest.json',
+];
 
 /// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。
 const int kCurrentVersionCode = 1;
@@ -214,6 +251,7 @@ const int kCurrentVersionCode = 1;
 final appUpdaterProvider = Provider<AppUpdater>((ref) {
   return AppUpdater(
     manifestUrl: kUpdateManifestUrl,
+    fallbackUrls: kUpdateManifestFallbacks,
     currentVersionCode: kCurrentVersionCode,
   );
 });
