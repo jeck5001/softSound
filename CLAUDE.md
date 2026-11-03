@@ -62,11 +62,19 @@
     `AppStrings.appVersion`、`kCurrentVersionCode`。由
     `test/services/app_updater_test.dart` 强制校验。
 
+17. **发版必须同步三处 + manifest.json**：`pubspec.yaml` 的 `version: x.y.z+N`、
+    `AppStrings.appVersion`、`kCurrentVersionCode`、仓库根 `manifest.json`
+    （`version_code` / `download_url` / `sha256`），且 manifest 要推到 **main**
+    ——清单从 main 读，没推上去用户就检查不到更新。
+18. **GitHub 在国内需代理**：实测不经代理访问 `github.com` /
+    `raw.githubusercontent.com` 会超时或返回 0 字节。给国内用户分发时应换
+    对象存储或自有服务器；代码侧只需改清单里的 `download_url`。
+
 ## 常用命令
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 660 用例全过
+flutter test                       # 基线 663 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
