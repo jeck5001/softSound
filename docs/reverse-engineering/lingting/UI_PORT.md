@@ -1385,3 +1385,46 @@ $ adb shell dumpsys media.audio_flinger | grep 5036
 
 再按音量加 8 格 → 轨道音量从 `-inf` 变 `-21`，声音恢复。
 即音量**完全跟随系统**，不再被 App 强行覆盖。
+
+### 6.53 从排行榜进入播放页没有封面（2026-11-03 用户真机反馈）
+
+**现象**：排行榜 → 随便点一本书 → 进播放页，**没有封面图**。
+
+**三层根因**（都是"封面在传递链路上丢了"）：
+
+1. **跳转没带封面**。榜单跳详情只传了 `?name=`：
+   ```dart
+   '/book/lrts_${b.id}?name=${Uri.encodeComponent(b.title)}'
+   ```
+   详情接口回来之前 `Book.coverUrl` 是 `null`，播放页自然空白。
+   而榜单响应里**本来就有真实 cover**（`KuwoRankBook.cover`），白拿不用。
+
+2. **更严重：会把库里已有的封面擦成 null**。`touchPlayedBook` 更新分支
+   无条件 `coverUrl: Value(book.coverUrl)` —— 从榜单进来时 coverUrl 是 null，
+   一播放就把数据库里的封面写成 null，**永久丢失**，之后续播/书架全空白。
+
+3. **播放页没有兜底**。只读 `currentBook.coverUrl`，内存里没有就一空到底。
+
+**修复**：
+
+| 位置 | 改动 |
+|---|---|
+| `ranking_page.dart` | 跳转带上 `&cover=<真实封面>` |
+| `routes.dart` + `book_detail_page.dart` | 解析 `cover` 参数 → `initialCover` → 初始 `Book.coverUrl` |
+| `book_repository.dart` | 新增 `_keepIfEmpty()`：空值 `Value.absent()`，**只更新有值的字段**（`coverUrl`/`intro`/`latestChapter`） |
+| `player_service.dart` | `currentBook` 无封面时从库里 `getBookById` 补一次 |
+
+**设备实测**（Android 15 模拟器）：
+
+```
+排行榜 → 懒人榜 → 《盗墓笔记》 → 立即播放
+  播放页封面完整显示 ✅（截图 screenshots/70_cover_from_ranking.png）
+  标题/章节/进度 1/793 均正确
+
+库里已有封面未被擦除：
+  lrts_30011    → https://bookpic.lrts.me/Vd48tJ5td3bc0O757p3Yj...
+  lrts_52798788 → https://bookpic.lrts.me/WLpgUtYipVNxFaLDCfubP...
+```
+
+> 第 2 条是本轮最值得记的：`Value(book.coverUrl)` 这种"无条件全字段覆盖"
+> 在**部分更新**语义下是 bug —— 上游只给了部分字段时，会把库里更完整的数据擦掉。

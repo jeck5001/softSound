@@ -148,7 +148,17 @@ class BookDetailPage extends ConsumerStatefulWidget {
   /// 跳转方已知的书名（轮播/榜单卡自带标题，避免详情加载前显示占位名）。
   final String? initialName;
 
-  const BookDetailPage({super.key, required this.bookId, this.initialName});
+  /// 列表页透传的封面（榜单/分类/首页自带真实 cover）。
+  ///
+  /// 详情接口返回前先用它，避免「从榜单点进去没有封面图」。
+  final String? initialCover;
+
+  const BookDetailPage({
+    super.key,
+    required this.bookId,
+    this.initialName,
+    this.initialCover,
+  });
 
   @override
   ConsumerState<BookDetailPage> createState() => _BookDetailPageState();
@@ -191,6 +201,10 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         name: (widget.initialName?.isNotEmpty ?? false)
             ? widget.initialName!
             : AppStrings.loadingBookInfo,
+        // 列表页透传的封面：详情接口回来之前先显示，避免空白封面
+        coverUrl: (widget.initialCover?.isNotEmpty ?? false)
+            ? widget.initialCover
+            : null,
         // 分类页/搜索页跳转时只有 id；详情由 getBookDetail 补全
         detailUrl: upstreamId,
       );

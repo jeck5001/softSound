@@ -59,6 +59,12 @@ class BookRepository {
         );
   }
 
+  /// 空值 → 不写（保留库里已有值）；有值 → 正常覆盖。
+  static Value<String?> _keepIfEmpty(String? v) {
+    if (v == null || v.trim().isEmpty) return const Value.absent();
+    return Value(v);
+  }
+
   /// 记录「播放过的书」——**不改动书架状态**。
   ///
   /// 背景：此前只有点「加入书架」才会写 `books` 表，于是「听过但没收藏」的书
@@ -91,6 +97,12 @@ class BookRepository {
       return;
     }
 
+    // 只更新「这次真的有值」的字段。
+    //
+    // 踩过的坑：以前无条件 `Value(book.coverUrl)`，而从榜单/搜索进入时
+    // 详情接口还没回来、book.coverUrl 是 null，于是把库里**已有的封面擦成 null**
+    // —— 之后续播、书架、播放页全都变成空白封面。
+    // 空值一律不写（保留旧值），这是「部分更新」该有的语义。
     await (_db.update(_db.booksTable)
           ..where((t) => t.bookId.equals(book.bookId)))
         .write(
@@ -98,11 +110,11 @@ class BookRepository {
         name: Value(book.name),
         author: Value(book.author),
         narrator: Value(book.narrator),
-        coverUrl: Value(book.coverUrl),
-        intro: Value(book.intro),
+        coverUrl: _keepIfEmpty(book.coverUrl),
+        intro: _keepIfEmpty(book.intro),
         detailUrl: Value(book.detailUrl),
         chapterCount: Value(book.chapterCount),
-        latestChapter: Value(book.latestChapter),
+        latestChapter: _keepIfEmpty(book.latestChapter),
         updateTime: Value(book.updateTime ?? DateTime.now()),
       ),
     );

@@ -103,6 +103,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           return BookDetailPage(
             bookId: bookId,
             initialName: state.uri.queryParameters['name'],
+            // 列表页（榜单/分类/首页）能拿到真实封面，先透传，
+            // 免得详情接口回来之前播放页没有封面图。
+            initialCover: state.uri.queryParameters['cover'],
           );
         },
       ),

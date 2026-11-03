@@ -294,9 +294,12 @@ class _RankingPageState extends ConsumerState<RankingPage> {
         itemBuilder: (context, i) {
           final b = _books[i];
           return InkWell(
+            // 带上封面：详情接口返回前，播放页/详情页先用榜单自带的真实封面，
+            // 否则从榜单进来会有一段（甚至一直）没有封面图。
             onTap: () => context.push(
               '/book/${_lrts ? 'lrts' : 'xiaoKu'}_${b.id}'
-              '?name=${Uri.encodeComponent(b.title)}',
+              '?name=${Uri.encodeComponent(b.title)}'
+              '${(b.cover != null && b.cover!.isNotEmpty) ? '&cover=${Uri.encodeComponent(b.cover!)}' : ''}',
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

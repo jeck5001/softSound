@@ -656,7 +656,20 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     // 之后播放页永远显示「加载书籍信息…」（用户实测踩到）。
     final playedBook = state.currentBook;
     if (playedBook != null && _isRealBook(playedBook)) {
-      unawaited(_bookRepo?.touchPlayedBook(playedBook) ?? Future<void>.value());
+      // 封面兜底：从榜单/搜索进来时 book.coverUrl 可能是 null（详情还没回来），
+      // 但库里可能已经存过真封面 —— 用它补上，避免播放页一直空白。
+      if (playedBook.coverUrl == null || playedBook.coverUrl!.isEmpty) {
+        final stored = await _bookRepo?.getBookById(playedBook.bookId);
+        final storedCover = stored?.coverUrl;
+        if (storedCover != null && storedCover.isNotEmpty) {
+          state = state.copyWith(
+            currentBook: playedBook.copyWith(coverUrl: storedCover),
+          );
+        }
+      }
+      unawaited(
+        _bookRepo?.touchPlayedBook(state.currentBook!) ?? Future<void>.value(),
+      );
     }
 
       // 单条 AudioSource 不再挂 tag：元数据与「上一章/下一章」改由
