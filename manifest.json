@@ -1,9 +1,9 @@
 {
-  "version_code": 3,
-  "version_name": "0.0.3",
-  "update_description": "修复懒人书源点进去加载不出来；书源请求自动重试",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.3/qingting-0.0.3.apk",
-  "sha256": "e9eb3a9f59a1df1cc5b73e56701016459849b7841832a24238caa2df80d618b6",
+  "version_code": 4,
+  "version_name": "0.0.4",
+  "update_description": "修复目录不全（重试叠加）与播放记录丢失（保存时机）",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.4/qingting-0.0.4.apk",
+  "sha256": "92daadce04dbd37bf0e9efbb95d3d8276d6149c8942bf762d233698a15f3b3c7",
   "force_update": false,
   "min_supported_code": 1
 }
