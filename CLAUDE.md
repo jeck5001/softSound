@@ -49,11 +49,16 @@
     判断"是否最后一章"。`nextChapter()` 到末尾必须先 `_refreshChaptersIfGrown()`；
     刷新只增不减（上游删章/改序会打乱播放位置）。
 
+14. **分页拉取失败不能 `break` 就完事**：章节列表要连拉近百页
+    （5795 集 = 97 页），任一页 429/超时就会**静默丢掉后半段**，
+    用户只看到「目录数量不对」。必须重试 + 退避，并把
+    `chapterCount`（上游声明总数）与实际列表比对，缺了就显式告警。
+
 ## 常用命令
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 638 用例全过
+flutter test                       # 基线 647 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
