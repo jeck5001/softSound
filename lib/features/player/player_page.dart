@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../services/player_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_strings.dart';
+import '../../data/models/chapter.dart';
+import '../../services/chapter_segments.dart';
 import '../../theme/app_widgets.dart';
 import '../../theme/brand_widgets.dart';
 import '../../theme/playback_settings.dart';
@@ -506,74 +508,227 @@ class PlayerPage extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            final c = context.appColors;
-            return Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (context) => _ChapterSheet(
+        chapters: playerState.chapters,
+        currentIndex: playerState.currentChapterIndex,
+        onPick: (index) {
+          playerNotifier.playChapter(index);
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+}
+
+/// 章节目录弹窗（带分段）。
+///
+/// 单独做成 StatefulWidget 而不是用 StatefulBuilder：
+/// 后者配合 `await showDialog` 时，外层 builder 重跑会重置局部变量，
+/// 表现为「点分段/点跳转没反应」（实测踩到）。
+class _ChapterSheet extends StatefulWidget {
+  const _ChapterSheet({
+    required this.chapters,
+    required this.currentIndex,
+    required this.onPick,
+  });
+
+  final List<Chapter> chapters;
+  final int currentIndex;
+  final void Function(int index) onPick;
+
+  @override
+  State<_ChapterSheet> createState() => _ChapterSheetState();
+}
+
+class _ChapterSheetState extends State<_ChapterSheet> {
+  late int _page;
+  final ScrollController _listController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开目录时直接落在**当前章所在段**：793 集写到第 700 章，
+    // 从「1-100集」开始找太痛苦。
+    _page = ChapterSegments.pageOf(widget.currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _jumpToChapter() async {
+    final total = widget.chapters.length;
+    final controller = TextEditingController();
+    final target = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('跳到指定集'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            hintText: '1 - $total',
+            helperText: '输入集数后跳到该集所在分段',
+          ),
+          onSubmitted: (v) => Navigator.pop(
+            ctx,
+            (int.tryParse(v.trim()) ?? 0).clamp(1, total) - 1,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              ctx,
+              (int.tryParse(controller.text.trim()) ?? 0).clamp(1, total) - 1,
+            ),
+            child: const Text('跳转'),
+          ),
+        ],
+      ),
+    );
+    // 不 dispose controller：dialog 退场动画期间 TextField 还挂在树上，
+    // 提前 dispose 会触发 `_dependents.isEmpty` 断言（实测崩溃）。
+    if (!mounted || target == null) return;
+    setState(() {
+      _page = ChapterSegments.pageOf(target);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.appColors;
+    final total = widget.chapters.length;
+    final ranges = ChapterSegments.ranges(total);
+    final safePage = ranges.isEmpty ? 0 : _page.clamp(0, ranges.length - 1);
+    final visible = ChapterSegments.slice(widget.chapters, safePage);
+    final rangeStart = ranges.isEmpty ? 0 : ranges[safePage].$1;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 8, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '${AppStrings.bookCatalog} (${playerState.chapters.length})',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: c.foreground,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: playerState.chapters.length,
-                      itemBuilder: (context, index) {
-                        final chapter = playerState.chapters[index];
-                        final isCurrent =
-                            index == playerState.currentChapterIndex;
-                        return ListTile(
-                          leading: isCurrent
-                              ? Icon(Icons.play_arrow, color: c.primary)
-                              : Text(
-                                  '${index + 1}',
-                                  style:
-                                      TextStyle(color: c.mutedForeground),
-                                ),
-                          title: Text(
-                            chapter.name,
-                            style: TextStyle(
-                              color: isCurrent ? c.primary : c.foreground,
-                              fontWeight:
-                                  isCurrent ? FontWeight.bold : null,
-                            ),
-                          ),
-                          selected: isCurrent,
-                          onTap: () {
-                            playerNotifier.playChapter(index);
-                            Navigator.pop(context);
-                          },
-                        );
-                      },
+                  Text(
+                    '${AppStrings.bookCatalog} ($total)',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: c.foreground,
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ],
               ),
-            );
-          },
+            ),
+            // 分段 chips（1-100集 / 101-200集 …），与详情页同一套规则
+            if (ranges.length > 1)
+              SizedBox(
+                height: 46,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: ranges.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, r) {
+                    final selected = r == safePage;
+                    return GestureDetector(
+                      onTap: () => setState(() => _page = r),
+                      child: Container(
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: selected ? const Color(0xFF7C3AED) : c.card,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selected
+                                ? const Color(0xFF7C3AED)
+                                : const Color(0xFFDDD6FE),
+                          ),
+                        ),
+                        child: Text(
+                          ChapterSegments.label(ranges[r]),
+                          style: TextStyle(
+                            color: selected ? Colors.white : c.foreground,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            // 集数多时（4715 集 = 48 段），滑 chips 也费劲 → 直接输入集数
+            if (ranges.length > 3)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
+                child: TextButton.icon(
+                  icon: const Icon(Icons.search, size: 18),
+                  label: const Text('跳到指定集'),
+                  onPressed: _jumpToChapter,
+                ),
+              ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                itemCount: visible.length,
+                itemBuilder: (context, i) {
+                  // 列表里是「本段第 i 条」，真实章节下标要加段起点
+                  final index = rangeStart + i;
+                  final chapter = visible[i];
+                  final isCurrent = index == widget.currentIndex;
+                  return ListTile(
+                    dense: true,
+                    leading: isCurrent
+                        ? Icon(Icons.play_arrow, color: c.primary)
+                        : SizedBox(
+                            width: 32,
+                            child: Text(
+                              '${index + 1}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: c.mutedForeground,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                    title: Text(
+                      chapter.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isCurrent ? c.primary : c.foreground,
+                        fontSize: 14,
+                        fontWeight: isCurrent ? FontWeight.bold : null,
+                      ),
+                    ),
+                    selected: isCurrent,
+                    onTap: () => widget.onPick(index),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );

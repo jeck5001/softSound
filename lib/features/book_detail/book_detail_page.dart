@@ -12,6 +12,7 @@ import '../../services/player_service.dart';
 import '../../services/audio_downloader.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_strings.dart';
+import '../../services/chapter_segments.dart';
 import '../../theme/app_widgets.dart';
 import '../../theme/brand_widgets.dart';
 import '../source_manager/source_manager_page.dart';
@@ -265,12 +266,9 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
     final book = d.book!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 章节区间（聆阅 100 集一页）
+    // 章节区间（聆阅 100 集一页）——与播放页目录共用同一套规则
     final total = d.chapters.length;
-    final ranges = <(int, int)>[
-      for (var i = 0; i < total; i += 100)
-        (i, i + 100 > total ? total : i + 100),
-    ];
+    final ranges = ChapterSegments.ranges(total);
     if (_rangePage >= ranges.length) _rangePage = 0;
     var visible = ranges.isEmpty
         ? <Chapter>[]
@@ -509,7 +507,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                               r == _rangePage ? lyHardShadowSm : null,
                         ),
                         child: Text(
-                          '${ranges[r].$1 + 1}-${ranges[r].$2}集',
+                          ChapterSegments.label(ranges[r]),
                           style: TextStyle(
                             color: r == _rangePage
                                 ? Colors.white
