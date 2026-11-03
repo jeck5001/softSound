@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:soft_sound/features/home/announcement_gate.dart';
 import 'package:soft_sound/features/home/home_page.dart';
 import 'package:soft_sound/features/explore/explore_page.dart';
 import 'package:soft_sound/features/bookshelf/bookshelf_page.dart';
@@ -220,9 +219,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     return Scaffold(
       body: Stack(
         children: [
-          // 启动公告闸门（聆阅 remote-config 契约）：
-          // 挂在壳层，避免只在使用某个页签时才检查。
-          AnnouncementGate(child: navigationShell),
+          // 启动公告已移除：那是**聆阅自己的**推广
+          //（「影视和短剧合并了」+ 指向作者网盘的下载链接），
+          // 与轻听无关，弹出来只会让用户困惑。
+          navigationShell,
           if (showMini)
             Positioned(
               left: 12,

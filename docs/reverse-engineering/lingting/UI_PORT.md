@@ -1599,3 +1599,39 @@ logcat 无「目录不完整」告警
 > 踩到的测试坑：清单里 `download_url` 最初写 `127.0.0.1`，
 > 模拟器里那是**模拟器自己**，不是宿主机 → `Connection refused`。
 > 正确写法是 `10.0.2.2`（模拟器到宿主机的固定别名）。
+
+### 6.58 移除启动公告弹窗（2026-11-03 用户反馈）
+
+**现象**：每次启动弹「公告：影视和短剧合并了，喜欢的下载吧！」，
+按钮是「立即下载 / 不再显示 / 关闭」。用户反馈：**「把这个弹窗去掉啊，都不是我的」**。
+
+**根因**：这个公告来自**聆阅自己的** `remote-config` 接口
+（`data.announcement`），内容是聆阅作者推广其影视短剧 App，
+`link_url` 指向 `wwayk.lanzoum.com`（作者个人网盘）。
+
+也就是说：**我们把别人的广告弹给了自己的用户**。
+且「立即下载」会引导用户去装**另一个 App**。
+
+> 与 6.57 是同一类错误 —— 复用了上游的接口，但接口里的**数据语义是别人的**。
+> 上一轮我已经因为 `remote-config` 的 `download_url` 差点把用户应用替换掉，
+> 这次是同一个接口的另一个字段。
+
+**处置**：整条链路删除，不是隐藏。
+
+| 删除 | 原因 |
+|---|---|
+| `lib/features/home/announcement_gate.dart` | 启动闸门，唯一的弹窗触发点 |
+| `lib/features/settings/update_dialogs.dart` | 公告弹窗 + 旧更新弹窗（已被 `app_updater` 取代） |
+| `lib/services/remote_config_api.dart` | 整个 remote-config 客户端（公告/版本/playApi 全部来自上游） |
+| 两个对应测试文件 | 测的是已不存在的能力 |
+
+`routes.dart` 里 `AnnouncementGate(child: navigationShell)` 改回 `navigationShell`。
+
+**为什么不保留成"可关闭/可配置"**：
+公告内容、链接、触发时机**全部**由聆阅的服务器决定，我们无法控制
+（今天推短剧、明天推别的）。保留它等于把广告位交给第三方，
+且每次都要用户点一遍才消失。直接删掉是最干净的做法。
+
+**影响面确认**：删除前全项目检索，`RemoteConfig` / `Announcement` /
+`remoteConfigProvider` 在我们自己的代码里**零引用**（只在上述文件内部自洽），
+不是"看着没用其实有用"。
