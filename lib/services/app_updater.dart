@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
@@ -93,7 +94,27 @@ class AppUpdater {
     required this.currentVersionCode,
     this.fallbackUrls = const [],
     Dio? dio,
-  }) : _dio = dio ?? Dio();
+  }) : _dio = dio ?? _defaultDio();
+
+  /// 创建 Dio。
+  ///
+  /// 注意：Dart 的 `HttpClient` **不读取** Android 系统代理设置（OkHttp 会），
+  /// 所以「模拟器里设了代理、App 却仍直连」是正常现象。真机直连即可；
+  /// 若你的网络必须走代理，用 `--dart-define=UPDATE_PROXY=host:port` 构建。
+  static Dio _defaultDio() {
+    const fromDefine = String.fromEnvironment('UPDATE_PROXY');
+    final dio = Dio();
+    if (fromDefine.isNotEmpty) {
+      dio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () {
+          final client = HttpClient();
+          client.findProxy = (_) => 'PROXY $fromDefine';
+          return client;
+        },
+      );
+    }
+    return dio;
+  }
 
   /// 所有候选清单地址（去重、保持顺序）。
   List<String> get _candidates {
@@ -157,38 +178,57 @@ class AppUpdater {
       m.forceUpdate ||
       (m.minSupportedCode > 0 && currentVersionCode < m.minSupportedCode);
 
+  /// APK 下载候选前缀（空串 = 直连）。
+  ///
+  /// 实测（走本机代理）：直连 36 秒下完 71MB（约 1.9 MB/s），足够。
+  /// 保留 ghproxy 仅作备用；每个候选都必须过 SHA-256 校验，
+  /// 所以镜像返回错误内容也不会被安装。
+  static const List<String> downloadMirrors = [
+    '',
+    'https://ghproxy.net/',
+  ];
+
   /// 下载 APK 到临时目录；失败或校验不通过返回 null。
+  ///
+  /// 依次尝试直连与镜像。每个候选都要过 SHA-256 校验，
+  /// 所以即使镜像返回了错误内容也不会被安装。
   Future<File?> downloadApk(
     UpdateManifest m, {
     void Function(int received, int total)? onProgress,
   }) async {
     if (!m.hasDownload) return null;
-    try {
-      final dir = await getTemporaryDirectory();
-      final target = File('${dir.path}/update-${m.versionCode}.apk');
-      if (await target.exists()) await target.delete();
+    final dir = await getTemporaryDirectory();
+    final target = File('${dir.path}/update-${m.versionCode}.apk');
 
-      await _dio.download(
-        m.downloadUrl,
-        target.path,
-        onReceiveProgress: onProgress,
-        options: Options(receiveTimeout: const Duration(minutes: 5)),
-      );
-      if (!await target.exists() || await target.length() == 0) return null;
+    for (final prefix in downloadMirrors) {
+      final url = '$prefix${m.downloadUrl}';
+      try {
+        if (await target.exists()) await target.delete();
+        await _dio.download(
+          url,
+          target.path,
+          onReceiveProgress: onProgress,
+          options: Options(
+            receiveTimeout: const Duration(minutes: 10),
+            sendTimeout: const Duration(seconds: 15),
+          ),
+        );
+        if (!await target.exists() || await target.length() == 0) continue;
 
-      if (m.sha256.isNotEmpty) {
-        final actual = await sha256OfFile(target);
-        if (actual != m.sha256) {
-          debugPrint('APK 校验失败: 期望 ${m.sha256}, 实际 $actual');
-          await target.delete();
-          return null;
+        if (m.sha256.isNotEmpty) {
+          final actual = await sha256OfFile(target);
+          if (actual != m.sha256) {
+            debugPrint('APK 校验失败（$url）: 期望 ${m.sha256}, 实际 $actual');
+            await target.delete();
+            continue;
+          }
         }
+        return target;
+      } catch (e) {
+        debugPrint('下载 APK 失败（$url）: $e');
       }
-      return target;
-    } catch (e) {
-      debugPrint('下载 APK 失败: $e');
-      return null;
     }
+    return null;
   }
 
   /// 调系统安装器。返回是否成功唤起。
@@ -230,19 +270,21 @@ Future<String> sha256OfFile(File f) async {
 // 聆阅的 remote-config（那会把应用替换成聆阅）。
 
 /// 自更新清单地址。
-/// 主清单地址：**jsDelivr CDN**（镜像 GitHub 仓库内容）。
+/// 主清单地址：**GitHub raw**。
 ///
-/// 为什么不用 GitHub raw 作首选：实测在本机与模拟器上
-/// `raw.githubusercontent.com` **间歇性超时**（同一分钟内 200 / 000 交替，
-/// 20 秒无响应），而 jsDelivr 同一时刻 1.4 秒返回 200。
-/// 单一地址会让「检查更新」表现为"点了没反应"。
+/// 选型经过实测（都走本机代理 127.0.0.1:7890）：
+/// - `raw.githubusercontent.com`：2.4 秒返回，**内容实时**（无缓存延迟）
+/// - `cdn.jsdelivr.net@main`：1.0 秒返回，但**有缓存延迟** ——
+///   实测发版后仍返回旧 sha256，会导致用户下载新包后校验失败
+///
+/// 所以主地址用 raw，jsDelivr 仅作兜底（它能覆盖 raw 偶发超时的场景）。
 const String kUpdateManifestUrl =
-    'https://cdn.jsdelivr.net/gh/jeck5001/softSound@main/manifest.json';
+    'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json';
 
 /// 备用清单地址（主地址失败时依次尝试）。
 const List<String> kUpdateManifestFallbacks = [
-  'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json',
-  'https://github.com/jeck5001/softSound/raw/main/manifest.json',
+  'https://raw.githubusercontent.com/jeck5001/softSound/refs/heads/main/manifest.json',
+  'https://cdn.jsdelivr.net/gh/jeck5001/softSound@main/manifest.json',
 ];
 
 /// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。

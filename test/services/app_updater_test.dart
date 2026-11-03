@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -137,6 +138,31 @@ void main() {
         reason: '聆阅的 download_url 会把本应用替换成聆阅',
       );
       expect(block.contains('appUpdaterProvider'), isTrue);
+    });
+  });
+
+  group('清单地址与分发（GitHub Releases 托管）', () {
+    test('主地址是 GitHub raw 且指向 main 分支', () {
+      final src = File('lib/services/app_updater.dart').readAsStringSync();
+      expect(src.contains('raw.githubusercontent.com/jeck5001/softSound/main/manifest.json'), isTrue);
+    });
+
+    test('有备用地址（raw 会间歇性超时）', () {
+      final src = File('lib/services/app_updater.dart').readAsStringSync();
+      expect(src.contains('kUpdateManifestFallbacks'), isTrue);
+      expect(src.contains('cdn.jsdelivr.net'), isTrue);
+    });
+
+    test('发版必须更新 manifest.json 的 version_code 与 sha256', () {
+      final m = File('manifest.json');
+      expect(m.existsSync(), isTrue, reason: '仓库根的 manifest.json 是自更新入口');
+      final body = m.readAsStringSync();
+      final parsed = UpdateManifest.tryParse(
+        const JsonDecoder().convert(body),
+      );
+      expect(parsed, isNotNull);
+      expect(parsed!.hasDownload, isTrue);
+      expect(parsed.sha256.length, 64, reason: 'sha256 必须是完整 64 位十六进制');
     });
   });
 
