@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
@@ -141,7 +142,8 @@ class PlayerState {
 }
 
 /// 播放器状态管理
-class PlayerNotifier extends StateNotifier<PlayerState> {
+class PlayerNotifier extends StateNotifier<PlayerState>
+    with WidgetsBindingObserver {
   final AudioPlayer _player;
   final SourceParser _parser;
   final PlayHistoryRepository _historyRepo;
@@ -184,6 +186,23 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         _parser = SourceParser(),
         super(const PlayerState()) {
     _initListeners();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// App 切后台/被杀前立刻落盘播放进度。
+  ///
+  /// 为什么需要：进度原本只靠 30 秒定时器保存。用户听不到 30 秒就切走/
+  /// 杀进程，这次收听就**完全没有记录** —— 表现为「播放记录没保存」。
+  /// `paused` 在切后台时同步触发，是唯一可靠的落盘时机
+  /// （进程被杀时 `dispose()` 根本不会执行）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      // 不 await：生命周期回调必须尽快返回
+      unawaited(_saveProgress());
+    }
   }
 
   /// 累计收听统计仓库（可选注入，便于测试）。
@@ -866,6 +885,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> pause() async {
     _playRequested = false;
     await _player.pause();
+    // 暂停后立刻落盘：用户「听完就退」是最常见的操作路径，
+    // 等 30 秒定时器往往等不到，表现为「播放记录没保存」。
+    await _saveProgress();
   }
 
   /// 停止
@@ -1007,6 +1029,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _audioEffects.disable();
     _deviceMonitor.stop();
     _saveProgress();

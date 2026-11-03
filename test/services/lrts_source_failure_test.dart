@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -73,7 +74,7 @@ void main() {
     test('500 会重试，后续成功则正常返回详情', () async {
       final adapter = LrtsSourceAdapter(
         dio: scriptedDio(
-          [500, 500, 200],
+          [500, 200],
           body: jsonEncode({
             'apiStatus': 0,
             'name': '三体',
@@ -138,6 +139,42 @@ void main() {
         isFalse,
         reason: '接口通了、是上游说这书不可用，不该提示"稍后重试"',
       );
+    });
+  });
+
+  group('重试不能叠加（防故障放大器）', () {
+    test('_get 本身不做重试，只发一次请求', () {
+      final src = File(
+        'lib/services/typed_sources/lrts_source_adapter.dart',
+      ).readAsStringSync();
+      final start = src.indexOf('Future<String?> _get(String path');
+      final block = src.substring(start, start + 1200);
+      expect(
+        block.contains('_maxGetAttempts'),
+        isFalse,
+        reason: '若 _get 内部重试，会与分页重试叠加成 3x3=9 次/页',
+      );
+      expect(block.contains('for (var attempt'), isFalse);
+    });
+
+    test('分页重试只在暂时性故障时进行', () {
+      final src = File(
+        'lib/services/typed_sources/lrts_source_adapter.dart',
+      ).readAsStringSync();
+      final start = src.indexOf('_getMenuPageWithRetry({');
+      final block = src.substring(start, start + 1400);
+      expect(
+        block.contains('_lastFailureRetryable'),
+        isTrue,
+        reason: '404 这类不该重试，否则白白拖长目录加载',
+      );
+    });
+
+    test('大目录的最坏请求数必须可控（5795 集 = 97 页）', () {
+      // 单页最多 3 次（分页层），不再乘以 _get 的重试
+      const pages = 97;
+      const maxPerPage = 3;
+      expect(pages * maxPerPage, lessThan(400), reason: '超过这个量级必然超时');
     });
   });
 

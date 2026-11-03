@@ -264,7 +264,11 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     if (bookId.trim().isEmpty) return null;
 
     _lastGetFailed = false;
-    final response = await _get('/ajax/getBookInfo?id=$bookId', source);
+    final response = await _getWithRetry(
+      '/ajax/getBookInfo?id=$bookId',
+      source,
+      attempts: 2,
+    );
     if (response == null) {
       // response == null 有两种含义：
       // 1. 网络/服务端故障（_lastGetFailed == true）→ 应提示"稍后重试"
@@ -344,8 +348,12 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         } catch (e) {
           _logger.w('lrts 第 $page 页解析失败（第 ${i + 1} 次）', error: e);
         }
+      } else if (!_lastFailureRetryable) {
+        // 404 之类不是暂时性故障，重试没有意义，直接放弃这一页
+        _logger.w('lrts 第 $page 页非暂时性失败，不再重试');
+        return null;
       }
-      // 退避：400ms、800ms、1600ms
+      // 退避：400ms、800ms
       if (i < attempts - 1) {
         await Future<void>.delayed(Duration(milliseconds: 400 * (1 << i)));
       }
@@ -589,69 +597,72 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
 
   // ------------------------------------------------------------------ 内部
 
+  /// 单次请求（**不做重试**）。
+  ///
+  /// ⚠️ 重试刻意不放在这里：分页拉目录本身已有 `_getMenuPageWithRetry`
+  /// （3 次 + 退避）。两处都重试会变成 3×3 = 9 次/页，
+  /// 一本 5795 集的书有 97 页 → 最坏 873 次请求、纯退避等待数分钟，
+  /// 结果反而是**目录拉不完 / 整体超时**，把容错做成了故障放大器。
+  ///
+  /// 所以：这里只发一次，失败如实返回；重试由调用方按语义决定。
   Future<String?> _get(String path, SourceRule source) async {
-    // Edge 代理层的不稳定是**已知现实**（实测 `lrts-menu` 会返回
-    // 500 `InvalidWorkerCreation: worker boot error`、`lrts-detail`
-    // 返回 429 限流）。这两种都是**暂时性**的，重试往往能成功，
-    // 而单次失败就直接放弃会让用户看到「加载书籍信息…」卡住。
-    for (var attempt = 0; attempt < _maxGetAttempts; attempt++) {
-      try {
-        final response = await _dio.get<String>(
-          '$_base$path',
-          options: Options(
-            responseType: ResponseType.plain,
-            // 5xx 也要重试，所以这里不拦 5xx，交给下面判断
-            validateStatus: (code) => code != null,
-            headers: {
-              'User-Agent': _userAgent,
-              'Referer': '$_base/',
-              ...?source.header,
-            },
-          ),
-        );
-        final code = response.statusCode ?? 0;
-        if (code == 200) {
-          // 200 但 body 是上游错误 JSON（apiStatus != 0）时不算网络失败，
-          // 交由调用方按业务错误处理。
-          return response.data;
-        }
-        if (code == 429 || code >= 500) {
-          _logger.w('lrts 第 ${attempt + 1} 次失败 ($code): $path');
-          if (attempt < _maxGetAttempts - 1) {
-            await Future<void>.delayed(
-              Duration(milliseconds: 300 * (1 << attempt)),
-            );
-            continue;
-          }
-          _lastGetFailed = true;
-          return null;
-        }
-        // 其他 4xx（如 404）不重试
-        _lastGetFailed = true;
-        return null;
-      } catch (e) {
-        _logger.w('lrts request failed: $path', error: e);
-        if (attempt < _maxGetAttempts - 1) {
-          await Future<void>.delayed(
-            Duration(milliseconds: 300 * (1 << attempt)),
-          );
-          continue;
-        }
-        _lastGetFailed = true;
-        return null;
-      }
+    _lastGetStatus = 0;
+    try {
+      final response = await _dio.get<String>(
+        '$_base$path',
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (code) => code != null,
+          headers: {
+            'User-Agent': _userAgent,
+            'Referer': '$_base/',
+            ...?source.header,
+          },
+        ),
+      );
+      final code = response.statusCode ?? 0;
+      _lastGetStatus = code;
+      if (code == 200) return response.data;
+      _logger.w('lrts 请求失败 ($code): $path');
+      return null;
+    } catch (e) {
+      _logger.w('lrts request failed: $path', error: e);
+      return null;
     }
-    return null;
   }
 
-  /// 单次请求最多尝试几次（1 次 + 2 次重试）。
-  static const int _maxGetAttempts = 3;
+  /// 上一次 [_get] 的 HTTP 状态码（0 = 网络异常/未知）。
+  int _lastGetStatus = 0;
 
-  /// 上一次 [_get] 是否因网络/服务端故障失败（用于区分"书没了"与"没连上"）。
+  /// 上一次详情请求是否因服务端故障失败。
   bool _lastGetFailed = false;
 
-  /// 上一次详情/目录请求是否因服务端故障失败。
+  /// 上一次失败是否属于「值得重试」的暂时性故障（429 限流 / 5xx）。
+  bool get _lastFailureRetryable => _lastGetStatus == 429 || _lastGetStatus >= 500;
+
+  /// 上一次详情请求是否因服务端故障失败（供 UI 区分"故障"与"书不存在"）。
   bool get lastFetchFailed => _lastGetFailed;
+
+  /// 带重试的 [_get]，**仅用于单次调用**（详情等）。
+  ///
+  /// 分页场景请用 `_getMenuPageWithRetry`，不要叠加 —— 见 [_get] 的说明。
+  Future<String?> _getWithRetry(
+    String path,
+    SourceRule source, {
+    int attempts = 2,
+  }) async {
+    for (var i = 0; i < attempts; i++) {
+      final r = await _get(path, source);
+      if (r != null) return r;
+      // 只有暂时性故障才重试；4xx（如 404）立即返回
+      if (!_lastFailureRetryable) break;
+      if (i < attempts - 1) {
+        await Future<void>.delayed(Duration(milliseconds: 400 * (1 << i)));
+      }
+    }
+    _lastGetFailed = true;
+    return null;
+  }
 
   String? _str(dynamic v) {
     if (v == null) return null;
