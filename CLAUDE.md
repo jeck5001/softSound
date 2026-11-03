@@ -45,11 +45,15 @@
     统一用 `ChapterSegments`（100 集一段），播放页与详情页共用，
     且打开时自动落在当前章所在段。
 
+13. **章节列表是实时拉的、会过期**：不要用「进入播放时」的 `chapters.length`
+    判断"是否最后一章"。`nextChapter()` 到末尾必须先 `_refreshChaptersIfGrown()`；
+    刷新只增不减（上游删章/改序会打乱播放位置）。
+
 ## 常用命令
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 630 用例全过
+flutter test                       # 基线 638 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```

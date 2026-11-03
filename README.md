@@ -11,7 +11,7 @@ flutter pub get
 flutter run                      # 连接设备或模拟器
 
 flutter analyze                  # 必须 0 issue
-flutter test                     # 630 用例
+flutter test                     # 638 用例
 flutter build apk --release      # 产物 build/app/outputs/flutter-apk/app-release.apk
 ```
 
