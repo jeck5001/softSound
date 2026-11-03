@@ -1,9 +1,9 @@
 {
-  "version_code": 1,
-  "version_name": "0.0.1",
-  "update_description": "首个公开版本：双书源、后台播放、通知栏切章、进度记忆、目录分段、应用内更新",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.1/qingting-0.0.1.apk",
-  "sha256": "f551f67a9c3fa7614b2eae8c52dd77c8ee5a47ae9816cdce29fca22c667e4b9c",
+  "version_code": 2,
+  "version_name": "0.0.2",
+  "update_description": "移除启动时的第三方公告弹窗",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.2/qingting-0.0.2.apk",
+  "sha256": "626344875e057ce012bf3d38873087c8fd65a495285a480dd9a35c43b2485dd6",
   "force_update": false,
   "min_supported_code": 1
 }
