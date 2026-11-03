@@ -511,6 +511,13 @@ class PlayerPage extends ConsumerWidget {
       builder: (context) => _ChapterSheet(
         chapters: playerState.chapters,
         currentIndex: playerState.currentChapterIndex,
+        // 上游声明的总集数：与本地列表比对，能立刻暴露"目录不全"
+        expectedCount: playerState.currentBook?.chapterCount,
+        onRefresh: () async {
+          final grew = await playerNotifier.refreshChapters();
+          ref.invalidate(playerProvider);
+          return grew;
+        },
         onPick: (index) {
           playerNotifier.playChapter(index);
           Navigator.pop(context);
@@ -530,11 +537,22 @@ class _ChapterSheet extends StatefulWidget {
     required this.chapters,
     required this.currentIndex,
     required this.onPick,
+    this.expectedCount,
+    this.onRefresh,
   });
 
   final List<Chapter> chapters;
   final int currentIndex;
   final void Function(int index) onPick;
+
+  /// 上游声明的总集数（`Book.chapterCount`）。
+  ///
+  /// 本地列表比它少 ⇒ 目录不全（分页中途失败 / 被上限截断），
+  /// 必须显式告诉用户，而不是让用户以为"这本书就这么多集"。
+  final int? expectedCount;
+
+  /// 重新拉取章节；返回是否变多。
+  final Future<bool> Function()? onRefresh;
 
   @override
   State<_ChapterSheet> createState() => _ChapterSheetState();
@@ -607,6 +625,9 @@ class _ChapterSheetState extends State<_ChapterSheet> {
     final total = widget.chapters.length;
     final ranges = ChapterSegments.ranges(total);
     final safePage = ranges.isEmpty ? 0 : _page.clamp(0, ranges.length - 1);
+    // 本地列表 vs 上游声明总数：少了就是目录不全
+    final expected = widget.expectedCount ?? 0;
+    final missing = expected > total ? expected - total : 0;
     final visible = ChapterSegments.slice(widget.chapters, safePage);
     final rangeStart = ranges.isEmpty ? 0 : ranges[safePage].$1;
 
@@ -639,6 +660,53 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                 ],
               ),
             ),
+            // 目录不全时的显式告警（不能假装"就这么多集"）
+            if (missing > 0)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 20, color: Color(0xFFB45309)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '目录可能不全：已加载 $total 集，共 $expected 集',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF92400E),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (widget.onRefresh != null)
+                      TextButton(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final grew = await widget.onRefresh!.call();
+                          if (!mounted) return;
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                grew ? '已重新拉取章节' : '仍未能获取更多章节，请稍后再试',
+                              ),
+                            ),
+                          );
+                          if (grew) {
+                            setState(() => _page = 0);
+                          }
+                        },
+                        child: const Text('重试'),
+                      ),
+                  ],
+                ),
+              ),
             // 分段 chips（1-100集 / 101-200集 …），与详情页同一套规则
             if (ranges.length > 1)
               SizedBox(

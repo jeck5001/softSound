@@ -305,6 +305,44 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     );
   }
 
+  /// 上一次 [getChapterList] 是否可能不完整（页数不够 / 中途失败）。
+  ///
+  /// 供 UI 决定是否提示「目录可能不全，下拉刷新重试」。
+  bool get lastFetchWasPartial => _lastFetchWasPartial;
+  bool _lastFetchWasPartial = false;
+
+  /// 拉单页章节，失败重试（Edge 429 / 网络抖动）。
+  ///
+  /// 大目录要连拉近百页，中间任何一页失败都会让目录缺一段；
+  /// 重试 + 指数退避能显著降低这种概率。
+  Future<Map<String, dynamic>?> _getMenuPageWithRetry({
+    required String bookId,
+    required int page,
+    required int pageSize,
+    required SourceRule source,
+    int attempts = 3,
+  }) async {
+    for (var i = 0; i < attempts; i++) {
+      final response = await _get(
+        '/ajax/getBookMenu?bookId=$bookId&pageNum=$page&pageSize=$pageSize&sortType=0',
+        source,
+      );
+      if (response != null) {
+        try {
+          final decoded = jsonDecode(response);
+          if (decoded is Map<String, dynamic>) return decoded;
+        } catch (e) {
+          _logger.w('lrts 第 $page 页解析失败（第 ${i + 1} 次）', error: e);
+        }
+      }
+      // 退避：400ms、800ms、1600ms
+      if (i < attempts - 1) {
+        await Future<void>.delayed(Duration(milliseconds: 400 * (1 << i)));
+      }
+    }
+    return null;
+  }
+
   @override
   Future<List<Chapter>> getChapterList(SourceRule source, Book book) async {
     final bookId = book.detailUrl;
@@ -312,31 +350,38 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
 
     // 真实抓包确认的分页参数：pageNum/pageSize/sortType（聆阅实际请求形态）。
     // pageSize=60、sortType=0（正序）。
+    //
+    // 关键：**任何一页失败都不能直接放弃**。
+    // 旧实现 `if (response == null) break;` 会在第 N 页失败时保留前 N-1 页
+    // 并静默丢弃后半段 —— 用户看到的就是「目录不全/数量不对」，
+    // 而且完全没有任何错误提示。Edge 有项目级并发限制（429），
+    // 大目录（5795 集 = 97 页）滚动拉取时命中概率很高。
     final all = <Chapter>[];
     const pageSize = 60;
     for (var page = 1; page <= _maxMenuPages; page++) {
-      final response = await _get(
-        '/ajax/getBookMenu?bookId=$bookId&pageNum=$page&pageSize=$pageSize&sortType=0',
-        source,
+      final Map<String, dynamic>? json = await _getMenuPageWithRetry(
+        bookId: bookId,
+        page: page,
+        pageSize: pageSize,
+        source: source,
       );
-      if (response == null) break;
-
-      final Map<String, dynamic> json;
-      try {
-        json = jsonDecode(response) as Map<String, dynamic>;
-      } catch (e) {
-        _logger.w('lrts getChapterList parse failed (page $page)', error: e);
+      if (json == null) {
+        // 重试后仍失败：到此为止，但必须让上层知道目录可能不全。
+        _logger.w('lrts 第 $page 页重试后仍失败，目录不完整（已取 ${all.length} 章）');
+        _lastFetchWasPartial = all.isNotEmpty;
         break;
       }
 
       final chapters = parseChapterResponse(book, json);
-      if (chapters.isEmpty) break; // 翻到头了
+      if (chapters.isEmpty) break; // 真的翻到头了
       all.addAll(chapters);
 
       // 到达总数即停（响应含 sections 总数）
       final sections = json['sections'];
-      if (sections is int && all.length >= sections) break;
+      if (sections is int && all.length >= sections) return _normalizeOrder(all);
     }
+    // 走到这里说明没对上 sections 总数（翻页上限 / 中途失败）
+    _lastFetchWasPartial = all.isNotEmpty;
     return _normalizeOrder(all);
   }
 
