@@ -205,7 +205,8 @@ Future<String> sha256OfFile(File f) async {
 // 聆阅的 remote-config（那会把应用替换成聆阅）。
 
 /// 自更新清单地址。
-const String kUpdateManifestUrl = '';
+const String kUpdateManifestUrl =
+    'https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json';
 
 /// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。
 const int kCurrentVersionCode = 1;
