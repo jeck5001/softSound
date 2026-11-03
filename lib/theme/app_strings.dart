@@ -302,7 +302,7 @@ class AppStrings {
   ///
   /// 由 `test/theme/app_version_test.dart` 静态校验，防止再次出现
   /// 「设置页硬编码 v1.1.7（那是聆阅的版本号）」这类漂移。
-  static const appVersion = '0.1.0';
+  static const appVersion = '0.2.9';
 
   /// 更新检查说明：下载地址来自上游发布渠道（聆阅），不是本应用的商店包。
   static const updateUpstreamNote = '更新信息来自上游发布渠道；下载后将安装该渠道的安装包。';
@@ -314,10 +314,23 @@ class AppStrings {
   static const updateContent = '更新内容';
   static const updateNow = '立即更新';
   static const updateLater = '暂不更新';
-  static const updateBrowserHint = '检测新版本并跳转浏览器下载';
+  static const updateBrowserHint = '检测并下载最新版本';
   static const updateBrowserConfirm = '\n\n是否立即前往系统默认浏览器下载更新？';
   static const updateDownloadHint = '点击立即前往浏览器下载最新安装包';
   static const updateFixNote = '修复已知问题，优化使用体验';
+
+  // ── 自更新（我们自己的清单，不是聆阅的）─────────────────────────
+  static const updateNotConfigured = '尚未配置更新源（发版后才能在线更新）';
+  static const updateCheckFailed = '检查更新失败，请稍后重试';
+  static const updateDownloading = '正在下载更新…';
+  static const updateDownloadFailed = '下载失败，请检查网络后重试';
+  static const updateVerifyFailed = '安装包校验失败，已删除，请重试';
+  static const updateInstallFailed = '无法唤起安装程序，请允许「安装未知应用」后重试';
+  static const updateForceHint = '此版本为必需更新，请先完成更新';
+  static const updateInstallGuide =
+      '下载完成后系统会提示安装。若提示「不允许安装未知应用」，'
+      '请在系统设置中允许「轻听」安装应用后返回重试。';
+  static const updateReadyInstall = '下载完成，即将打开系统安装程序';
 
   // ---------------------------------------------------------------- 多设备同步
 

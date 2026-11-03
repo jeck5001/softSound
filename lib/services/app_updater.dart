@@ -1,0 +1,218 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:convert/convert.dart';
+import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+
+/// 应用自更新：检查版本 → 下载 APK → 调系统安装器。
+///
+/// ## 为什么必须用「自己的」更新源
+///
+/// 项目原有的「检查更新」走**聆阅的** `remote-config`，其 `download_url`
+/// 指向聆阅作者的个人网盘（`wwayk.lanzoum.com/...`），版本号是聆阅的 `1.1.7`。
+/// 对本应用而言这**既错且危险**：
+///
+/// - 我们的版本是 `0.2.x`，永远小于 `1.1.7` → **永远**提示"发现新版本"；
+/// - 用户点「立即下载」后装上的却是**聆阅**，等于把本应用替换掉。
+///
+/// 所以自更新必须走独立清单，不能复用上游那段。
+///
+/// ## 清单格式（静态 JSON，放 GitHub Releases / 对象存储 / 自有 CDN 皆可）
+///
+/// ```json
+/// {
+///   "version_code": 30,
+///   "version_name": "0.3.0",
+///   "update_description": "修复 X，优化 Y",
+///   "download_url": "https://example.com/qingting-0.3.0.apk",
+///   "sha256": "…",
+///   "force_update": false,
+///   "min_supported_code": 1
+/// }
+/// ```
+///
+/// ## 尚未解决的前置条件（必须你确认）
+///
+/// - **签名**：release 目前仍是 debug 签名（`android/app/build.gradle.kts`
+///   有 TODO）。Android 拒绝「签名不一致」的覆盖安装 —— 正式分发前
+///   必须先配正式签名并从此固定，否则用户装不上更新。
+/// - **托管位置**：清单与 APK 放哪里由你决定。
+class UpdateManifest {
+  const UpdateManifest({
+    required this.versionCode,
+    required this.versionName,
+    this.updateDescription = '',
+    this.downloadUrl = '',
+    this.sha256 = '',
+    this.forceUpdate = false,
+    this.minSupportedCode = 0,
+  });
+
+  final int versionCode;
+  final String versionName;
+  final String updateDescription;
+  final String downloadUrl;
+
+  /// APK 的 SHA-256（小写十六进制）。为空则跳过校验（不推荐）。
+  final String sha256;
+  final bool forceUpdate;
+
+  /// `versionCode` 低于此值的安装必须更新。
+  final int minSupportedCode;
+
+  /// 解析清单；字段不合法返回 null（调用方给可读提示）。
+  static UpdateManifest? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final code = raw['version_code'];
+    final name = raw['version_name'];
+    if (code is! int || name is! String || name.trim().isEmpty) return null;
+    return UpdateManifest(
+      versionCode: code,
+      versionName: name.trim(),
+      updateDescription: '${raw['update_description'] ?? ''}'.trim(),
+      downloadUrl: '${raw['download_url'] ?? ''}'.trim(),
+      sha256: '${raw['sha256'] ?? ''}'.trim().toLowerCase(),
+      forceUpdate: raw['force_update'] == true,
+      minSupportedCode:
+          raw['min_supported_code'] is int ? raw['min_supported_code'] as int : 0,
+    );
+  }
+
+  bool get hasDownload => downloadUrl.startsWith('http');
+}
+
+/// 检查 / 下载 / 安装 的编排（纯逻辑，便于单测）。
+class AppUpdater {
+  AppUpdater({
+    required this.manifestUrl,
+    required this.currentVersionCode,
+    Dio? dio,
+  }) : _dio = dio ?? Dio();
+
+  /// 自更新清单地址。为空 = 未配置 → UI 必须明确说"未配置"，
+  /// **绝不能**回退到聆阅的地址。
+  final String manifestUrl;
+  final int currentVersionCode;
+  final Dio _dio;
+
+  bool get isConfigured => manifestUrl.startsWith('http');
+
+  /// 拉取清单；失败返回 null。
+  Future<UpdateManifest?> fetchManifest() async {
+    if (!isConfigured) return null;
+    try {
+      final res = await _dio.get<String>(
+        manifestUrl,
+        options: Options(
+          responseType: ResponseType.plain,
+          // 清单必须实时：CDN 缓存会导致"检查不到新版本"
+          headers: {'Cache-Control': 'no-cache'},
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+      final body = res.data;
+      if (body == null || body.trim().isEmpty) return null;
+      return UpdateManifest.tryParse(jsonDecode(body));
+    } catch (e) {
+      debugPrint('拉取更新清单失败: $e');
+      return null;
+    }
+  }
+
+  /// 是否需要更新（清单版本号更大）。
+  bool needsUpdate(UpdateManifest m) => m.versionCode > currentVersionCode;
+
+  /// 是否强制更新。
+  bool isForced(UpdateManifest m) =>
+      m.forceUpdate ||
+      (m.minSupportedCode > 0 && currentVersionCode < m.minSupportedCode);
+
+  /// 下载 APK 到临时目录；失败或校验不通过返回 null。
+  Future<File?> downloadApk(
+    UpdateManifest m, {
+    void Function(int received, int total)? onProgress,
+  }) async {
+    if (!m.hasDownload) return null;
+    try {
+      final dir = await getTemporaryDirectory();
+      final target = File('${dir.path}/update-${m.versionCode}.apk');
+      if (await target.exists()) await target.delete();
+
+      await _dio.download(
+        m.downloadUrl,
+        target.path,
+        onReceiveProgress: onProgress,
+        options: Options(receiveTimeout: const Duration(minutes: 5)),
+      );
+      if (!await target.exists() || await target.length() == 0) return null;
+
+      if (m.sha256.isNotEmpty) {
+        final actual = await sha256OfFile(target);
+        if (actual != m.sha256) {
+          debugPrint('APK 校验失败: 期望 ${m.sha256}, 实际 $actual');
+          await target.delete();
+          return null;
+        }
+      }
+      return target;
+    } catch (e) {
+      debugPrint('下载 APK 失败: $e');
+      return null;
+    }
+  }
+
+  /// 调系统安装器。返回是否成功唤起。
+  ///
+  /// 注意：Android 8.0+ 需要用户为本应用开启「安装未知应用」权限，
+  /// 否则系统会弹授权页而不是安装页 —— 这是系统行为，无法绕过。
+  /// 调用方应在点击前给用户一句说明，避免以为"点了没反应"。
+  static Future<bool> installApk(File apk) async {
+    try {
+      final result = await OpenFilex.open(
+        apk.path,
+        type: 'application/vnd.android.package-archive',
+      );
+      return result.type == ResultType.done;
+    } catch (e) {
+      debugPrint('唤起安装器失败: $e');
+      return false;
+    }
+  }
+}
+
+/// 分块计算文件 SHA-256（避免把整个 APK 读进内存）。
+Future<String> sha256OfFile(File f) async {
+  final output = AccumulatorSink<Digest>();
+  final input = sha256.startChunkedConversion(output);
+  await for (final chunk in f.openRead()) {
+    input.add(chunk);
+  }
+  input.close();
+  return output.events.single.toString();
+}
+
+// ── 配置 ────────────────────────────────────────────────────────────
+//
+// 【需要你填】把 APK 和 manifest.json 传到任意可公开下载的位置
+// （GitHub Releases 最省事），然后把清单地址填到这里。
+//
+// 留空时「检查更新」会明确显示「尚未配置更新源」，**不会**回退到
+// 聆阅的 remote-config（那会把应用替换成聆阅）。
+
+/// 自更新清单地址。
+const String kUpdateManifestUrl = '';
+
+/// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。
+const int kCurrentVersionCode = 29;
+
+final appUpdaterProvider = Provider<AppUpdater>((ref) {
+  return AppUpdater(
+    manifestUrl: kUpdateManifestUrl,
+    currentVersionCode: kCurrentVersionCode,
+  );
+});

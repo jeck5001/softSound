@@ -1,7 +1,7 @@
 name: soft_sound
 description: "跨平台听书APP"
 publish_to: 'none'
-version: 0.1.0
+version: 0.2.9+29
 
 environment:
   sdk: ^3.8.1
@@ -21,6 +21,8 @@ dependencies:
   drift: ^2.14.1
   sqlite3_flutter_libs: ^0.5.18
   path_provider: ^2.1.1
+  crypto: ^3.0.3
+  open_filex: ^4.5.0
   path: ^1.8.3
   shared_preferences: ^2.2.2
   
@@ -52,6 +54,7 @@ dependencies:
   flutter_inappwebview: ^6.0.0
   image: ^4.7.2
   url_launcher: ^6.3.2
+  convert: ^3.1.2
 
 dev_dependencies:
   flutter_test:

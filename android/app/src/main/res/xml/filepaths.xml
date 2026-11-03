@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内更新：把下载到缓存目录的 APK 通过 FileProvider 交给系统安装器。
+  open_filex 需要能访问 cache-path。
+-->
+<paths>
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
+</paths>

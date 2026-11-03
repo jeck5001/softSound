@@ -8,11 +8,10 @@ import 'package:soft_sound/theme/effects_settings.dart';
 import 'package:soft_sound/theme/playback_settings.dart';
 import 'package:soft_sound/theme/theme_controller.dart';
 
-import 'package:soft_sound/services/remote_config_api.dart';
 import 'package:soft_sound/services/system_settings_bridge.dart';
 
 import '../downloads/downloads_notifier.dart';
-import 'update_dialogs.dart';
+import '../../services/app_updater.dart';
 import 'package:soft_sound/data/models/listener_stats.dart';
 import 'package:soft_sound/data/repositories/stats_repository.dart';
 
@@ -193,9 +192,10 @@ class SettingsPage extends ConsumerWidget {
           SettingsTile(
             icon: Icons.system_update_outlined,
             title: AppStrings.checkUpdate,
-            // 此前这里写死「已是最新版本」并且点击只弹同一句话 —— 是假功能。
-            // 现在走聆阅的真实契约（remote-config），见 [_checkUpdate]。
-            subtitle: AppStrings.updateBrowserHint,
+            // 走**自己的**更新清单（不是聆阅的 remote-config）。
+            // 后者 download_url 指向聆阅作者网盘、版本号 1.1.7，
+            // 点了会把本应用替换成聆阅 —— 见 [AppUpdater] 文件头说明。
+            subtitle: '${AppStrings.updateBrowserHint} · v${AppStrings.appVersion}',
             onTap: () => _checkUpdate(context, ref),
           ),
 
@@ -493,23 +493,118 @@ class SettingsPage extends ConsumerWidget {
   ///
   /// 流程与字节码 #21402 一致：拉配置 → 逐段比较版本号 → 有更新弹窗，
   /// 无更新提示「当前已是最新版本 (vX)」。限流/失败给可读提示，不假装成功。
+  /// 检查更新（**自己的清单**，见 [AppUpdater]）。
+  ///
+  /// 不再使用聆阅的 `remote-config`：它的 `download_url` 指向聆阅作者网盘、
+  /// 版本号是聆阅的 `1.1.7`，对我们的 `0.2.x` 永远"有新版本"，
+  /// 点下载会装成聆阅、把本应用替换掉。
   Future<void> _checkUpdate(BuildContext context, WidgetRef ref) async {
-    _snack(context, AppStrings.checkingUpdate);
-    RemoteConfig cfg;
-    try {
-      // 复用会话级缓存（与启动公告共用同一次请求）。
-      cfg = await ref.read(remoteConfigProvider.future);
-    } catch (_) {
-      if (context.mounted) _snack(context, AppStrings.networkError);
+    final updater = ref.read(appUpdaterProvider);
+    if (!updater.isConfigured) {
+      _snack(context, AppStrings.updateNotConfigured);
       return;
     }
+    _snack(context, AppStrings.checkingUpdate);
+    final manifest = await updater.fetchManifest();
     if (!context.mounted) return;
-
-    if (!cfg.shouldPromptUpdate(AppStrings.appVersion)) {
+    if (manifest == null) {
+      _snack(context, AppStrings.updateCheckFailed);
+      return;
+    }
+    if (!updater.needsUpdate(manifest)) {
       _snack(context, '${AppStrings.alreadyLatest}${AppStrings.appVersion})');
       return;
     }
-    await showUpdateDialog(context, version: cfg.version);
+
+    final forced = updater.isForced(manifest);
+    final go = await _confirmUpdate(context, manifest, forced: forced);
+    if (!go || !context.mounted) return;
+
+    // 应用内下载 + 校验 + 唤起安装器（不再跳浏览器）
+    _snack(context, AppStrings.updateDownloading);
+    final apk = await updater.downloadApk(manifest);
+    if (!context.mounted) return;
+    if (apk == null) {
+      _snack(
+        context,
+        manifest.sha256.isEmpty
+            ? AppStrings.updateDownloadFailed
+            : AppStrings.updateVerifyFailed,
+      );
+      return;
+    }
+    _snack(context, AppStrings.updateReadyInstall);
+    final ok = await AppUpdater.installApk(apk);
+    if (!context.mounted) return;
+    if (!ok) {
+      // 系统拒绝唤起安装器（多为未开启「安装未知应用」），
+      // 给出可操作指引而不是只说"失败"。
+      _snack(context, AppStrings.updateInstallFailed);
+    }
+  }
+
+  /// 更新确认弹窗；返回是否继续更新。
+  Future<bool> _confirmUpdate(
+    BuildContext context,
+    UpdateManifest m, {
+    required bool forced,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !forced,
+      builder: (context) {
+        final c = context.appColors;
+        return AlertDialog(
+          title: Text('${AppStrings.newVersionFound}${m.versionName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (m.updateDescription.isNotEmpty) ...[
+                Text(
+                  AppStrings.updateContent,
+                  style: TextStyle(
+                    color: c.mutedForeground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(m.updateDescription),
+              ],
+              const SizedBox(height: 10),
+              Text(
+                AppStrings.updateInstallGuide,
+                style: TextStyle(color: c.mutedForeground, fontSize: 11.5),
+              ),
+              if (forced) ...[
+                const SizedBox(height: 10),
+                Text(
+                  AppStrings.updateForceHint,
+                  style: const TextStyle(
+                    color: Color(0xFFB45309),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            if (!forced)
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text(AppStrings.updateLater),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(AppStrings.updateNow),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
   }
 
   /// 确认清空累计收听统计。

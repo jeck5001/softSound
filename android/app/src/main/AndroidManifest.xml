@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <!-- Android 13+ 通知权限：没有它就没有媒体通知，也就没有小米灵动岛/焦点通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 应用内更新：下载 APK 后调系统安装器（Android 8.0+ 需显式声明） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     
     <application
         android:label="轻听"
@@ -63,6 +65,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- open_filex 用于把 APK 交给系统安装器（Android 7.0+ 需 FileProvider） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/filepaths" />
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

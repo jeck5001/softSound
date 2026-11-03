@@ -1554,3 +1554,48 @@ logcat 无「目录不完整」告警
 
 > 注：这次模拟器网络良好，97 页没触发失败，所以**告警条未被实际触发**。
 > 该分支靠单测（9 条）覆盖，如实记录为未做端到端验证。
+
+### 6.57 在线更新（2026-11-03 用户提问）
+
+**问题**：怎么能够在线更新版本？
+
+**改造前的严重问题**（必须记录，差点造成事故）：
+
+「检查更新」走的是**聆阅的** `remote-config`：
+
+| 字段 | 实际值 | 后果 |
+|---|---|---|
+| `version_name` | `1.1.7`（聆阅的版本） | 我们 `0.2.x` **永远**更小 → 永远提示"发现新版本" |
+| `download_url` | `wwayk.lanzoum.com/...`（聆阅作者网盘） | 点下载装的是**聆阅** → **把本应用替换掉** |
+
+即：用户一点更新，应用就没了。这是"复用上游契约"时最容易犯的错 ——
+**数据字段是上游的，语义却是别人的**。
+
+**修复与实现**：
+
+| 位置 | 内容 |
+|---|---|
+| `lib/services/app_updater.dart`（新） | `UpdateManifest` / `AppUpdater`：清单拉取、版本比较、下载、SHA-256 校验、唤起安装器 |
+| `lib/features/settings/settings_page.dart` | `_checkUpdate` 改走自己的清单；`_confirmUpdate` 弹窗；应用内下载安装 |
+| `AndroidManifest.xml` | `REQUEST_INSTALL_PACKAGES` + `FileProvider`（`@xml/filepaths`） |
+| `pubspec.yaml` | 新增 `crypto`、`convert`、`open_filex` |
+
+**版本号问题一并修掉**：此前交付的包叫 `0.2.x`，但 `pubspec.yaml` 一直是
+`0.1.0`、`appVersion` 也写死 `0.1.0` —— 装了新包版本号却不变，
+自更新永远判断不出来。现改为 `0.2.9+29` 并加了**一致性单测**。
+
+**全链路设备实测**（Android 15 模拟器，本地 HTTP 服务器模拟发布）：
+
+```
+设置 → 检查更新
+  弹窗「发现新版本 v0.3.0」+ 更新内容 + 安装说明 ✅
+→ 立即更新
+  下载到 cache/update-30.apk = 170,232,722 字节（与源文件一致）✅
+  SHA-256 校验通过（不通过会被删除并报错）✅
+  mCurrentFocus=com.google.android.packageinstaller/PackageInstallerActivity ✅
+  系统弹「不允许安装未知应用」（Android 安全机制，符合预期）
+```
+
+> 踩到的测试坑：清单里 `download_url` 最初写 `127.0.0.1`，
+> 模拟器里那是**模拟器自己**，不是宿主机 → `Connection refused`。
+> 正确写法是 `10.0.2.2`（模拟器到宿主机的固定别名）。
