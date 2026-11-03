@@ -143,6 +143,16 @@ Edge 请求经 `EdgeGate` 串行化（300ms 间隔）避免 429。
 反汇编产物在 `/tmp/hasm_out`（50.9MB，22,819 函数）；
 `/tmp/fn.sh <fn#>` 导出函数体，`/tmp/fn_index.tsv` 是行号→函数号索引。
 
+## 回归审计（大改动后必跑）
+
+```bash
+./scripts/regression-audit.sh   # 21 项历史修复是否仍在
+flutter test                    # 行为级验证
+```
+
+清单见 `docs/regression-audit.md`。**判定标准是"行为仍成立"而非"关键字还在"** ——
+实现方式可以变（如 `just_audio_background` → `audio_service`），行为不能丢。
+
 ## 排查"用户反馈"类问题的顺序
 
 用户报的是**现象**，根因常在状态语义而非 UI。按这个顺序查：
