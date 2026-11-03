@@ -36,11 +36,20 @@
    起播前必须走 `_ensureAudioSession()`（`configure` + `setActive`）——
    `just_audio` 在 `setActive` 失败时会**静默不动**，不报错也不打日志。
 
+11. **弹窗里需要可变状态时，用独立 `StatefulWidget`，不要用 `StatefulBuilder`**：
+    配合 `await showDialog` 时，外层 builder 重跑会把局部变量重置回初始值
+    （表现为「点了没反应」）。另外 `TextEditingController.dispose()` **不能**
+    紧跟 `await showDialog` —— 退场动画期间 `TextField` 还在树上，
+    会触发 `_dependents.isEmpty` 断言红屏。
+12. **章节目录必须分段**：一本有声书动辄上千集（793 / 4715）。
+    统一用 `ChapterSegments`（100 集一段），播放页与详情页共用，
+    且打开时自动落在当前章所在段。
+
 ## 常用命令
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 614 用例全过
+flutter test                       # 基线 630 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
