@@ -54,11 +54,19 @@
     用户只看到「目录数量不对」。必须重试 + 退避，并把
     `chapterCount`（上游声明总数）与实际列表比对，缺了就显式告警。
 
+15. **绝不能复用聆阅的 `remote-config` 做更新**：它的 `download_url` 指向
+    聆阅作者网盘、`version_name` 是聆阅的 `1.1.7`。对本应用而言意味着
+    「永远提示有新版本」+「点下载装成聆阅、把本应用替换掉」。
+    自更新只用 `kUpdateManifestUrl`（`lib/services/app_updater.dart`）。
+16. **版本号三处必须一致**：`pubspec.yaml` 的 `version: x.y.z+N`、
+    `AppStrings.appVersion`、`kCurrentVersionCode`。由
+    `test/services/app_updater_test.dart` 强制校验。
+
 ## 常用命令
 
 ```bash
 flutter analyze                    # 必须 0 issue
-flutter test                       # 基线 647 用例全过
+flutter test                       # 基线 660 用例全过
 flutter build apk --debug          # 真机验证用（~193MB，支持 run-as 看 DB）
 flutter build apk --release        # 出包（~71MB）
 ```
