@@ -1,90 +1,84 @@
-# 在线更新（自更新）配置说明
+# 在线更新（自更新）— 已托管到 GitHub Releases
 
-## 先说结论
+## 现状：已可用
 
-功能已实现并**全链路验证通过**：
+| 项 | 值 |
+|---|---|
+| 版本 | **0.0.1**（versionCode **1**） |
+| Release | https://github.com/jeck5001/softSound/releases/tag/v0.0.1 |
+| APK 直链 | `https://github.com/jeck5001/softSound/releases/download/v0.0.1/qingting-0.0.1.apk` |
+| 清单（主） | `https://raw.githubusercontent.com/jeck5001/softSound/main/manifest.json` |
+| 签名 | 正式签名 `CN=QingTing`，证书 SHA-256 `d1a20e9d…7f25` |
+| 仓库 | Public（APK 可匿名下载） |
 
-```
-设置 → 检查更新 → 发现新版本 v0.3.0 → 立即更新
-  → 应用内下载（带进度）→ SHA-256 校验 → 唤起系统安装器 ✅
-```
-
-要真正用起来，**你需要做两件事**（各约 5 分钟）：
-
-1. 把 APK 和清单传到可公开下载的地方
-2. 把清单地址填进 `lib/services/app_updater.dart` 的 `kUpdateManifestUrl`
-
----
-
-## ⚠️ 先说一个已修掉的严重问题
-
-改造前，「检查更新」走的是**聆阅的** `remote-config`：
-
-| 字段 | 实际值 | 后果 |
-|---|---|---|
-| `version_name` | `1.1.7`（聆阅版本） | 我们的 `0.2.x` **永远**比它小 → 永远提示"发现新版本" |
-| `download_url` | `wwayk.lanzoum.com/...`（聆阅作者网盘） | 点下载装的是**聆阅** → 把本应用替换掉 |
-
-这个问题是致命的：用户一点更新，应用就没了。
-
-现在已改为**独立清单**，并且未配置时会明确显示「尚未配置更新源」，
-**不会**回退到聆阅那段。
+**实测**（走本机代理）：清单 2.4 秒返回；APK 36 秒下完 71MB（约 1.9 MB/s）；
+下载文件 SHA-256 与清单声明**逐字一致**。
 
 ---
 
-## 一、发版前必做：配置正式签名
+## ⚠️ 两个必须知道的现状
 
-当前 release 仍是 **debug 签名**（`android/app/build.gradle.kts` 有 TODO）。
+### 1. GitHub 在国内需代理
+不经代理时，本机与模拟器访问 `github.com` / `raw.githubusercontent.com`
+**超时或 0 字节**；走代理后一切正常。
 
-Android 会拒绝「签名不一致」的覆盖安装。所以：
+所以：**给国内用户分发时，GitHub Releases 不是可靠渠道**。
+建议后续换成对象存储（阿里 OSS / 七牛）或自有服务器 + HTTPS。
+换的时候只需改 `manifest.json` 里的 `download_url` 与
+`kUpdateManifestUrl`，代码不用动。
 
-- 如果用户装的是 debug 签名的包，你换了正式签名 → **装不上**，只能卸载重装
-- 一旦定了正式签名，**以后所有版本都必须用同一个 keystore**
+App 侧已做三处兜底：
+- 清单 3 个地址依次重试（raw / refs-heads / jsDelivr）
+- 每个地址重试 2 次，8 秒超时
+- APK 下载支持镜像前缀（`downloadMirrors`），且**每个候选都过 SHA-256 校验**
+
+### 2. 签名密钥务必离线备份
+`android/qingting-release.jks`（别名 `qingting`，口令见 `android/key.properties`）。
+两者都在 `.gitignore` 里，**不在仓库中**。
+
+> 密钥丢失 → 老用户永远无法覆盖更新，只能卸载重装（本地数据丢失）。
+
+---
+
+## 发版流程（每次新版照做）
 
 ```bash
-# 1. 生成 keystore（只做一次，务必备份！丢了就再也无法更新老用户）
-keytool -genkey -v -keystore ~/qingting-release.jks \
-  -keyalg RSA -keysize 2048 -validity 10000 -alias qingting
+# 1. 改版本号（三处必须一致，有单测强制）
+#    pubspec.yaml:  version: 0.0.2+2
+#    lib/theme/app_strings.dart:  appVersion = '0.0.2'
+#    lib/services/app_updater.dart:  kCurrentVersionCode = 2
 
-# 2. 在 android/key.properties 写（不要提交到 git）
-#    storePassword=...
-#    keyPassword=...
-#    keyAlias=qingting
-#    storeFile=/Users/you/qingting-release.jks
+# 2. 出包
+flutter build apk --release
+
+# 3. 算 sha256
+shasum -a 256 build/app/outputs/flutter-apk/app-release.apk
+
+# 4. 创建 Release 并上传（文件名保持 qingting-<version>.apk）
+export https_proxy=http://127.0.0.1:7890
+gh release create v0.0.2 \
+  build/app/outputs/flutter-apk/app-release.apk \
+  --title "轻听 v0.0.2" --notes "..."
+
+# 5. 更新仓库根的 manifest.json（version_code / download_url / sha256）
+
+# 6. 提交并推送（必须是 main，清单从 main 读）
+git add manifest.json && git commit -m "release: 0.0.2" && git push origin main
 ```
 
-然后在 `android/app/build.gradle.kts` 的 `signingConfigs` 里读取它。
+> 第 6 步别忘：**清单没推上去，用户就检查不到新版本**。
 
 ---
 
-## 二、版本号规则
-
-`pubspec.yaml`：
-
-```yaml
-version: 0.2.9+29
-#        ↑     ↑
-#     版本名   versionCode（自更新比较的就是它，必须单调递增）
-```
-
-同时要更新 `lib/services/app_updater.dart` 里的 `kCurrentVersionCode`。
-
-> `test/services/app_updater_test.dart` 会**强制校验**这两处一致。
-> 不一致会导致「永远有新版本」或「永远检查不到更新」。
-
----
-
-## 三、清单格式
-
-传一个静态 JSON，例如 `manifest.json`：
+## 清单格式
 
 ```json
 {
-  "version_code": 30,
-  "version_name": "0.3.0",
-  "update_description": "修复目录不全；优化播放体验",
-  "download_url": "https://your-host.com/qingting-0.3.0.apk",
-  "sha256": "f01ed6e7...",
+  "version_code": 2,
+  "version_name": "0.0.2",
+  "update_description": "修复 X",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.2/qingting-0.0.2.apk",
+  "sha256": "<64 位十六进制>",
   "force_update": false,
   "min_supported_code": 1
 }
@@ -92,64 +86,33 @@ version: 0.2.9+29
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `version_code` | ✅ | 必须 > 用户当前 versionCode 才会提示 |
-| `version_name` | ✅ | 弹窗显示用 |
-| `update_description` | | 更新内容 |
-| `download_url` | ✅ | APK 直链，必须 http/https |
-| `sha256` | 强烈建议 | 不匹配会**删除文件并报错**，防止下载到损坏/被替换的包 |
-| `force_update` | | `true` 时不显示"暂不更新"，且不能点外部关闭 |
-| `min_supported_code` | | 低于此 versionCode 强制更新（老版本兜底） |
-
-生成 sha256：
-
-```bash
-shasum -a 256 轻听-0.3.0.apk
-```
+| `version_code` | ✅ | 必须 > 用户当前 versionCode |
+| `version_name` | ✅ | 弹窗标题用 |
+| `download_url` | ✅ | http/https 直链 |
+| `sha256` | 强烈建议 | 不匹配会删文件并报错 |
+| `force_update` | | true 则不显示"暂不更新" |
+| `min_supported_code` | | 低于此 code 强制更新 |
 
 ---
 
-## 四、托管位置怎么选
-
-| 方案 | 优点 | 注意 |
-|---|---|---|
-| **GitHub Releases**（推荐） | 免费、有直链、能放多个历史版本 | 需要公开仓库；国内访问可能慢 |
-| 对象存储（阿里 OSS / 七牛） | 国内快 | 要确保 APK 是**公开可读**且 `Content-Type` 不是网页 |
-| 自有服务器 / Nginx | 完全可控 | 需要 HTTPS（Android 9+ 默认禁明文） |
-
-清单和 APK 可以放同一处，也可以分开。
-
----
-
-## 五、填进代码
-
-`lib/services/app_updater.dart`：
-
-```dart
-const String kUpdateManifestUrl = 'https://your-host.com/manifest.json';
-```
-
-留空 = 未配置，设置页会显示「尚未配置更新源」。
-
----
-
-## 六、用户体验细节（已处理）
-
-- **下载在主线程外**，带进度回调，不会卡界面
-- **SHA-256 校验**失败会删文件并提示「安装包校验失败」
-- **系统会拦一道**：Android 8.0+ 首次更新需用户允许「安装未知应用」。
-  弹窗里已写明操作路径，避免用户以为"点了没反应"
-- 清单请求带 `Cache-Control: no-cache`，避免 CDN 缓存导致检查不到新版本
-
----
-
-## 七、未实现（如实说明）
+## 已知限制
 
 | 项 | 现状 |
 |---|---|
-| 增量更新（差分包） | 未做。每次全量下载 APK（~71 MB） |
-| 应用商店上架 | 未做。目前只能侧载 |
-| 后台静默更新 | 未做，也不可能（Android 限制必须用户确认） |
-| 灰度 / 分渠道 | 未做。清单是全局的 |
+| jsDelivr 缓存 | `@main` 有缓存延迟（实测取到旧 sha）。仅作兜底；主地址用 raw |
+| 增量更新 | 未做，每次全量 ~71 MB |
+| 后台静默更新 | 未做（Android 不允许，必须用户确认） |
+| 灰度发布 | 未做，清单是全局的 |
 
-如果需要减少下载体积，可行的下一步是接 `bsdiff` 做差分，但会显著增加复杂度，
-建议等用户量起来再考虑。
+---
+
+## 排障
+
+**点了"检查更新"没反应？**
+1. 确认 `kUpdateManifestUrl` 非空（空则提示"尚未配置更新源"）
+2. 手机上直接开清单 URL 看能否访问
+3. `adb logcat | grep "拉取更新清单失败"` 看具体错误
+
+**下载完装不上？**
+- 提示"应用未安装" → 签名不一致（换过 keystore）
+- 提示"不允许安装未知应用" → 系统设置里允许本应用安装
