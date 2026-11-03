@@ -1,7 +1,7 @@
 name: soft_sound
 description: "跨平台听书APP"
 publish_to: 'none'
-version: 0.2.9+29
+version: 0.0.1+1
 
 environment:
   sdk: ^3.8.1

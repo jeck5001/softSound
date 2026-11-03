@@ -72,7 +72,13 @@ flutter build apk --release        # 出包（~71MB）
 ```
 
 产物 `build/app/outputs/flutter-apk/app-release.apk`。
-**注意：release 目前仍用 debug 签名**（`android/app/build.gradle.kts` 有 TODO）。
+
+**签名**：已配置正式签名（`android/key.properties` + `android/qingting-release.jks`，
+两者都在 `.gitignore` 中，**不进仓库**）。证书 `CN=QingTing`，
+SHA-256 `d1a20e9d495e83430bdafebcf7e990556c21b2b27260025d842ee9c23fbb7f25`。
+
+> ⚠️ **keystore 丢了老用户就永远无法覆盖更新**，务必离线备份。
+> 换签名后用户只能卸载重装（数据会丢）。
 
 ## 模拟器（真机验证）
 
