@@ -73,6 +73,14 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
 
   BookDetailNotifier(this._bookRepo, this._historyRepo) : super(const BookDetailState());
 
+  /// 重新拉取详情与章节（用户下拉刷新 / 想知道有没有更新时）。
+  Future<void> reload() async {
+    final book = state.book;
+    final source = state.source;
+    if (book == null || source == null) return;
+    await loadBook(book, source);
+  }
+
   Future<void> loadBook(Book book, SourceRule source) async {
     _isCancelled = false;
     state = BookDetailState(book: book, source: source, isLoading: true);
@@ -275,9 +283,13 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
         : d.chapters.sublist(ranges[_rangePage].$1, ranges[_rangePage].$2);
     if (!_asc) visible = visible.reversed.toList();
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 40),
-      children: [
+    // 下拉刷新：上游更新章节后，用户不必退出重进就能拿到新目录。
+    return RefreshIndicator(
+      onRefresh: () => ref.read(bookDetailProvider.notifier).reload(),
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 40),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
         // 渐变头部区
         Container(
           decoration: BoxDecoration(
@@ -546,7 +558,8 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
                   ? ranges[_rangePage].$1 + i
                   : ranges[_rangePage].$2 - 1 - i),
         ],
-      ],
+        ],
+      ),
     );
   }
 

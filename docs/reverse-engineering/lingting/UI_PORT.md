@@ -1469,3 +1469,41 @@ $ adb shell dumpsys media.audio_flinger | grep 5036
   「跳到指定集」输入 700 → 直接落到 601-700 集，显示 601-邛笼石影-追逐战 ✅（截图 72）
   当前播放章 006 在列表里高亮 + 播放图标
 ```
+
+### 6.55 章节更新的获取能力（2026-11-03 用户提问）
+
+**问题**：后续有章节更新，能正常获取到吗？
+
+**代码事实（不是猜测）**：
+
+| 事实 | 证据 |
+|---|---|
+| 章节列表**完全不缓存** | DB 只有 `books` / `play_history` / `download_chapters` / `listening_stats` 四张表，**没有章节表** |
+| 每次进详情/播放都实时拉 | `book_detail_page.dart:88`、`player_service.dart:510` 都调 `getChapterList` |
+| 懒人分页容量 | `pageSize=60` × `_maxMenuPages=120` = **7200 集** |
+| 真实最大书 | `lrts_bookinfo_real.json` 的 `sections=5795` → 97 页，在限内 |
+
+即：**重新打开就能拿到最新目录**，这一点本来是好的。
+
+**但有三个真实缺口**（已修）：
+
+1. **播放中到最后一章会卡死**。`nextChapter()` 原本是：
+   ```dart
+   if (state.currentChapterIndex < state.chapters.length - 1) { ... }
+   ```
+   列表是**进入播放时**拉的，听几小时后早已过期；到"本地最后一章"时
+   直接空转，用户再也前进不了。
+   → 现在末尾会先 `_refreshChaptersIfGrown()`，有新章节就继续播。
+
+2. **详情页没有下拉刷新**。用户想知道有没有更新，只能退出重进。
+   → 加 `RefreshIndicator` + `AlwaysScrollableScrollPhysics`（内容不足一屏也能下拉）。
+
+3. **刷新必须只增不减**。上游删章/改序时若整体替换，会把用户正在听的
+   位置搞乱。→ `fresh.length > state.chapters.length` 才替换。
+
+**验证**：
+- 单测 8 条（`test/services/chapter_update_test.dart`）覆盖上述全部约束
+- 设备实测：详情页下拉刷新后页面正常、章节数 276 未变（该书确实无更新），
+  无崩溃、无日志异常
+- **未验证**：真实的"上游新增章节"场景需要等上游更新，无法即时构造；
+  该路径靠单测 + 代码逻辑保证，**如实记录为未做端到端验证**

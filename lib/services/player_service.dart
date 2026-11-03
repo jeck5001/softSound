@@ -956,8 +956,38 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> nextChapter() async {
     if (state.currentChapterIndex < state.chapters.length - 1) {
       await playChapter(state.currentChapterIndex + 1);
+      return;
+    }
+    // 已经在本地列表的最后一章：可能是「上游更新了新章节」。
+    // 章节列表是进入播放时拉的，长时间收听后会过期；
+    // 这里先刷新一次，有新章节就继续播，没有才真正停下。
+    if (await _refreshChaptersIfGrown()) {
+      await playChapter(state.currentChapterIndex + 1);
     }
   }
+
+  /// 重新拉章节列表；数量变多则替换并返回 true。
+  ///
+  /// 只增不减：上游删章/改序时保持旧列表，避免把用户正在听的位置搞乱。
+  Future<bool> _refreshChaptersIfGrown() async {
+    final book = state.currentBook;
+    final source = state.currentSource;
+    if (book == null || source == null) return false;
+    try {
+      final fresh = await _parser.getChapterList(source, book);
+      if (fresh.length > state.chapters.length) {
+        _logger.d('章节有更新: ${state.chapters.length} -> ${fresh.length}');
+        state = state.copyWith(chapters: fresh);
+        return true;
+      }
+    } catch (e) {
+      _logger.w('刷新章节列表失败', error: e);
+    }
+    return false;
+  }
+
+  /// 供 UI 手动刷新目录（例如用户发现没更新时下拉）。
+  Future<bool> refreshChapters() => _refreshChaptersIfGrown();
 
   /// 快进
   Future<void> fastForward({Duration duration = const Duration(seconds: 15)}) async {
