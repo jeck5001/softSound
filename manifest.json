@@ -1,9 +1,9 @@
 {
-  "version_code": 2,
-  "version_name": "0.0.2",
-  "update_description": "移除启动时的第三方公告弹窗",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.2/qingting-0.0.2.apk",
-  "sha256": "626344875e057ce012bf3d38873087c8fd65a495285a480dd9a35c43b2485dd6",
+  "version_code": 3,
+  "version_name": "0.0.3",
+  "update_description": "修复懒人书源点进去加载不出来；书源请求自动重试",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.3/qingting-0.0.3.apk",
+  "sha256": "e9eb3a9f59a1df1cc5b73e56701016459849b7841832a24238caa2df80d618b6",
   "force_update": false,
   "min_supported_code": 1
 }

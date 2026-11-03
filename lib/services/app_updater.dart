@@ -288,7 +288,7 @@ const List<String> kUpdateManifestFallbacks = [
 ];
 
 /// 当前 versionCode（与 pubspec 的 `version: x.y.z+N` 的 N 一致）。
-const int kCurrentVersionCode = 2;
+const int kCurrentVersionCode = 3;
 
 final appUpdaterProvider = Provider<AppUpdater>((ref) {
   return AppUpdater(
