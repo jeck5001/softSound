@@ -540,7 +540,7 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: LyBrutalCard(
                 child: Text(
-                  '目录可能不全：已加载 \$total 集，共 \$expected 集。'
+                  '目录可能不全：已加载 $total 集，共 $expected 集。'
                   '下拉刷新可继续补齐（已拉到的部分会保留）。',
                   style: TextStyle(
                     color: const Color(0xFFB45309),

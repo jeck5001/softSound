@@ -281,6 +281,8 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
     final out = <Chapter>[];
     final seen = <String>{};
 
+    // 上游会把 rn 截顶，第一页之后以"本页实际条数"为准
+    var expectedPageSize = chapterPageSize;
     for (var pn = 0; pn < maxChapterPages; pn++) {
       final url =
           'http://search.kuwo.cn/r.s?stype=albuminfo&loginUid=0&loginSid=null&prod=kwplayer_ar_9.1.7.0&bkprod=kwbook_ar_9.1.7.0&source=kwplayer_ar_9.1.7.0_t18.apk&bksource=kwbook_ar_9.1.7.0_t18.apk&corp=kuwo&albumid=${book.detailUrl}&pn=$pn&rn=$chapterPageSize&show_copyright_off=1&vipver=MUSIC_8.2.0.0_BCS17&mobi=1&sortby=3&iskwbook=1';
@@ -299,8 +301,10 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
       }
       if (page.isEmpty) break;
 
+      var addedThisPage = 0;
       for (final c in page) {
         if (!seen.add(c.url)) continue; // 上游若重叠，按 musicrid 去重
+        addedThisPage++;
         out.add(
           Chapter(
             chapterId: SourceUtils.chapterId(book.bookId, out.length),
@@ -314,9 +318,32 @@ class XiaoKuSourceAdapter implements TypedSourceAdapter {
       }
 
       final total = parseChapterTotal(response);
-      if (total == null || total <= 0) break; // 无总数信息 → 单页结果即全部
-      if (out.length >= total) break;
-      if (page.length < chapterPageSize) break; // 末页，无需再请求
+
+      // ⚠️ 绝不能只凭「本页不满一页」就判定到末页。
+      // 实测上游会把 `rn` **截顶**：请求 rn=1000，酷我每页最多只给 300 条
+      // （albumid=66695527：songnum=1237，pn=0 与 pn=1 都恰好返回 300 条）。
+      // 旧实现写的是 `if (page.length < chapterPageSize) break;`
+      // → 300 < 1000 → 第 0 页就停，用户看到的正是「300 集」
+      //   以及「目录可能不全：已加载 300 集，共 1237 集」。
+      //
+      // 正确做法：
+      // - 总数已知 → 只在 out.length >= total 时结束
+      // - 总数未知 → 才用"本页不满"作为末页依据
+      // - 记住本页实际条数作为有效页大小，避免按 1000 空算
+      if (total != null && total > 0) {
+        if (out.length >= total) break;
+      } else if (page.length < expectedPageSize) {
+        break; // 无总数信息且本页不满 → 只能认为到末页
+      }
+      // 进展判据：本页去重后**一条新的都没有**，说明上游在重复给同一页
+      // （常见于 `songnum` 虚高：包含未发布/付费隐藏的集数）。
+      // 这条取代了旧的"本页不满一页 = 末页"——后者会把
+      // "上游把 rn 截顶到 300" 误判成末页，正是停在 300 集的成因。
+      if (addedThisPage == 0) {
+        _logger.d('xiaoKu pn=$pn 无新增章节，停止翻页（songnum 可能虚高）');
+        break;
+      }
+      expectedPageSize = page.length;
     }
     return out;
   }

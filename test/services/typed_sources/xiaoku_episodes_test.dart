@@ -131,7 +131,16 @@ void main() {
       expect(edgeHits, 0, reason: '直连成功就不该再打 Edge（常被限流，且 paid 不可信）');
     });
 
-    test('末页判定：本页不足 rn 即停止翻页', () async {
+    // 原名「末页判定：本页不足 rn 即停止翻页」。
+    // 这个前提被真实上游证伪：我们请求 rn=1000，酷我每页最多只给 300 条
+    // （albumid=66695527：songnum=1237，pn=0/pn=1 都恰好 300 条），
+    // 于是"本页不满一页"会在第 0 页就把真分页误判成末页 ——
+    // 用户反馈的「夜无疆 只有 300 集」正是这个成因。
+    //
+    // 本测试真正想守护的是「songnum 虚高时不要无限翻页」。改用
+    // **进展判据**（本页去重后无任何新增 → 停止）来表达，既满足该诉求，
+    // 又不会破坏真分页。代价是多一次请求。
+    test('songnum 虚高时靠"本页无新增"收束，而不是靠"本页不满"误判末页', () async {
       var directHits = 0;
       final dio = Dio()
         ..httpClientAdapter = _StubAdapter((o) {
@@ -144,7 +153,12 @@ void main() {
       final chs = await a.getChapterList(source(), book());
 
       expect(chs, hasLength(2));
-      expect(directHits, 1, reason: '本页未满 rn 说明已到末页，不应继续请求下一页');
+      expect(
+        directHits,
+        2,
+        reason: 'songnum=8 与本页 2 条不一致时不能直接收工，'
+            '要再请求一页确认"没有新增"才停止（防漏集优先于省一次请求）',
+      );
       expect(chs.first.duration, 476);
     });
 
