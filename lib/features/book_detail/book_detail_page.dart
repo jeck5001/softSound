@@ -99,12 +99,38 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
       final progress = await _historyRepo.getProgress(book.bookId);
       if (_isCancelled || !mounted) return;
 
-      final detailBook = await _parser.getBookDetail(source, book);
+      final fetchedDetail = await _parser.getBookDetail(source, book);
       if (_isCancelled || !mounted) return;
-      // 详情拉失败（服务端 500/429、网络断开）时，别让标题停在占位串上。
-      // 占位 Book 的特征：name 是纯数字 id（来自榜单页，只有 id 没有书名）。
-      final looksPlaceholder = int.tryParse(book.name) != null;
-      final detailFailed = detailBook == null && looksPlaceholder;
+
+      // 详情拉失败时，别让标题停在占位串上（「加载书籍信息…」或纯数字 id）。
+      // 注意：占位形态有**两种来源** ——
+      //   · 榜单/分类页跳转 → name 是纯数字 id
+      //   · 书架/搜索/历史跳转（路由只带 bookId）→ name 是
+      //     AppStrings.loadingBookInfo
+      // 旧判定只看纯数字，于是路由进来那条路径会**静默卡在占位串**上。
+      final startsAsPlaceholder = PlayerNotifier.isPlaceholderBook(book) ||
+          int.tryParse(book.name.trim()) != null;
+
+      // 兜底：详情失败但本地库里存过这本书 → 用库里的真名/封面/集数，
+      // 而不是把占位串显示给用户。
+      Book? detailBook = fetchedDetail;
+      if (detailBook == null && startsAsPlaceholder) {
+        final stored = await _bookRepo.getBookById(book.bookId);
+        if (stored != null && !PlayerNotifier.isPlaceholderBook(stored)) {
+          detailBook = book.copyWith(
+            name: stored.name,
+            author: stored.author,
+            narrator: stored.narrator,
+            intro: stored.intro,
+            coverUrl: stored.coverUrl?.isNotEmpty ?? false
+                ? stored.coverUrl
+                : book.coverUrl,
+            chapterCount: stored.chapterCount,
+            latestChapter: stored.latestChapter,
+          );
+        }
+      }
+      final detailFailed = detailBook == null && startsAsPlaceholder;
 
       // 目录走「网络 + 缓存合并」：本次失败的页由历史缓存补上。
       final expected = (detailBook ?? book).chapterCount ?? 0;
