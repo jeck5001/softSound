@@ -4,6 +4,6 @@
   "update_description": "修复目录加载不全（异常报文被当成翻到头）；目录跨会话累积补齐；详情页显示不全告警",
   "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.5/qingting-0.0.5.apk",
   "sha256": "8a84e0157611ac9ac25c8920649d2643ed7e18608bd47faa625dfca65f533ae5",
-  "force_update": true,
+  "force_update": false,
   "min_supported_code": 1
 }
