@@ -1,9 +1,9 @@
 {
-  "version_code": 5,
-  "version_name": "0.0.5",
-  "update_description": "修复目录加载不全（异常报文被当成翻到头）；目录跨会话累积补齐；详情页显示不全告警",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.5/qingting-0.0.5.apk",
-  "sha256": "8a84e0157611ac9ac25c8920649d2643ed7e18608bd47faa625dfca65f533ae5",
+  "version_code": 6,
+  "version_name": "0.0.6",
+  "update_description": "修复目录停在整 300 集：网络抖动不再被误判为确定失败，熔断阈值 4→10，并加上请求超时",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.6/qingting-0.0.6.apk",
+  "sha256": "f080f2162bb571bde0a40bc90ac1a62f5f313411962b95695d47f40952698790",
   "force_update": false,
   "min_supported_code": 1
 }
