@@ -33,9 +33,29 @@ import 'typed_source_adapter.dart';
 ///   因此 [getAudioUrl] 默认返回 null（详见方法注释）。
 /// - `getBookMenu` 单次只返回部分章节，需按 `sectionId` 翻页。
 class LrtsSourceAdapter implements TypedSourceAdapter {
-  LrtsSourceAdapter({Dio? dio}) : _dio = dio ?? Dio();
+  /// `connectTimeout` 只能在 BaseOptions 上设（连接早于请求发生）。
+  /// 不给默认值的话 Dio 永不超时，一次卡死的连接就能让整个目录挂住。
+  ///
+  /// [retryBaseDelay] / [interPageDelay] 仅为单测可注入的退避与节奏参数，
+  /// 默认值就是线上值；不改的话，模拟"持续故障"的用例要真等几十秒。
+  LrtsSourceAdapter({
+    Dio? dio,
+    Duration retryBaseDelay = const Duration(milliseconds: 400),
+    Duration interPageDelay = _kInterPageDelayDefault,
+  })  : _dio = dio ??
+            Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 10),
+            )),
+        _retryBaseDelay = retryBaseDelay,
+        _interPageDelay = interPageDelay;
 
   final Dio _dio;
+
+  /// 单次页内重试的退避基数。
+  final Duration _retryBaseDelay;
+
+  /// 页与页之间的礼貌间隔。
+  final Duration _interPageDelay;
   final Logger _logger = Logger();
 
   /// 移动端 UA —— 真实请求验证过，桌面 UA 可能被拒。
@@ -335,7 +355,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     required int pageSize,
     required SourceRule source,
     int attempts = 3,
-    Duration baseDelay = const Duration(milliseconds: 400),
+    Duration? baseDelay,
   }) async {
     for (var i = 0; i < attempts; i++) {
       final response = await _get(
@@ -356,7 +376,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       }
       if (i < attempts - 1) {
         await Future<void>.delayed(
-          Duration(milliseconds: baseDelay.inMilliseconds * (1 << i)),
+          (baseDelay ?? _retryBaseDelay) * (1 << i),
         );
       }
     }
@@ -435,6 +455,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         reachedEnd = true;
         break;
       }
+      await Future<void>.delayed(_interPageDelay);
     }
 
     // 补拉失败页：退避更长（限流往往需要时间恢复），但仍设上限防卡死。
@@ -445,7 +466,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         pageSize: pageSize,
         source: source,
         attempts: 2,
-        baseDelay: const Duration(milliseconds: 1500),
+        baseDelay: _retryBaseDelay * 4,
       );
       if (json == null || !_hasListField(json)) continue;
       for (final c in parseChapterResponse(book, json)) {
@@ -453,6 +474,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       }
       final s = json['sections'];
       if (s is int && s > 0) sections = s;
+      await Future<void>.delayed(_interPageDelay);
     }
 
     final sorted = byIndex.values.toList()
@@ -479,7 +501,11 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
   static bool _hasListField(Map<String, dynamic> json) => json.containsKey('list');
 
   /// 连续失败多少页后中止翻页（服务整体不可用时不白等）。
-  static const int _abortAfterConsecutiveFailures = 4;
+  ///
+  /// 4 太激进：手机网络连续抖 4 次很常见，会把"暂时不行"误判成"这书就这样"。
+  static const int _abortAfterConsecutiveFailures = 10;
+
+  static const Duration _kInterPageDelayDefault = Duration(milliseconds: 200);
 
   /// 章节顺序兜底（聆阅 #17865 `ensureChaptersAscending`）：
   /// 上游若明显倒序（≥70% 相邻集号递减）则整表翻转并重建索引。
@@ -693,6 +719,10 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         options: Options(
           responseType: ResponseType.plain,
           validateStatus: (code) => code != null,
+          // 必须显式设超时：Dio 默认**没有**超时，卡住的连接会一直挂着，
+          // 既拖慢整个目录加载，也让失败原因不可判定。
+          receiveTimeout: const Duration(seconds: 15),
+          sendTimeout: const Duration(seconds: 10),
           headers: {
             'User-Agent': _userAgent,
             'Referer': '$_base/',
@@ -718,7 +748,15 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
   bool _lastGetFailed = false;
 
   /// 上一次失败是否属于「值得重试」的暂时性故障（429 限流 / 5xx）。
-  bool get _lastFailureRetryable => _lastGetStatus == 429 || _lastGetStatus >= 500;
+  /// 是否属于「重试有可能成功」的失败。
+  ///
+  /// ⚠️ 必须包含 `_lastGetStatus == 0`（socket 异常 / 超时 / DNS 抖动）：
+  /// 手机网络下这类瞬时故障最常见。旧实现只认 429/5xx，
+  /// 于是**一次网络抖动就把该页记为永久失败**，连续几页就触发熔断，
+  /// 结果停在整 300 集（= 5 页成功 + 4 页抖动 + 熔断）——
+  /// 这正是用户截图里「已加载 300 集，共 923 集」的成因。
+  bool get _lastFailureRetryable =>
+      _lastGetStatus == 0 || _lastGetStatus == 429 || _lastGetStatus >= 500;
 
   /// 上一次详情请求是否因服务端故障失败（供 UI 区分"故障"与"书不存在"）。
   bool get lastFetchFailed => _lastGetFailed;
