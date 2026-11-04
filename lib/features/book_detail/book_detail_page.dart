@@ -301,6 +301,8 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
 
     // 章节区间（聆阅 100 集一页）——与播放页目录共用同一套规则
     final total = d.chapters.length;
+    // 上游声明的总集数：判断「目录不全」的唯一依据
+    final expected = book.chapterCount ?? 0;
     final ranges = ChapterSegments.ranges(total);
     if (_rangePage >= ranges.length) _rangePage = 0;
     var visible = ranges.isEmpty
@@ -516,6 +518,38 @@ class _BookDetailPageState extends ConsumerState<BookDetailPage> {
             ),
           )
         else ...[
+          // 目录不全告警：与 Book.chapterCount（上游声明总数）比对。
+          // 之前 `state.error` 被赋值却从未渲染，所以详情页对
+          // 「拉不全 / 服务不可用」完全静默 —— 用户只能干等。
+          if (total == 0 && d.error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: LyBrutalCard(
+                child: Text(
+                  d.error!,
+                  style: TextStyle(
+                    color: const Color(0xFFB45309),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            )
+          else if (expected > 0 && total > 0 && total < expected)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: LyBrutalCard(
+                child: Text(
+                  '目录可能不全：已加载 \$total 集，共 \$expected 集。'
+                  '下拉刷新可继续补齐（已拉到的部分会保留）。',
+                  style: TextStyle(
+                    color: const Color(0xFFB45309),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           // 区间 chips + 排序
           if (total > 100 || total > 0)
             Padding(

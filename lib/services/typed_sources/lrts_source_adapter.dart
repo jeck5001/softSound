@@ -404,10 +404,26 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
       }
       consecutiveFailures = 0;
 
+      // ⚠️ 必须区分「真的翻到头」与「报文异常」：
+      // 429 限流 / 5xx 的错误体里**没有 list 字段**（形如
+      // {"requestId":…,"code":"projectConcurrencyLimitExceeded",…}），
+      // 旧实现把它当成"空列表 = 翻到头"直接 break，
+      // 于是目录静默缺掉后半段、且不报「不全」——
+      // 这正是用户反复看到「目录加载不全」的机制。
+      if (!_hasListField(json)) {
+        _logger.w('lrts 第 $page 页报文无 list 字段（异常响应），记为失败页');
+        failedPages.add(page);
+        consecutiveFailures++;
+        if (consecutiveFailures >= _abortAfterConsecutiveFailures) {
+          _logger.w('lrts 连续 $consecutiveFailures 页异常，中止翻页');
+          break;
+        }
+        continue;
+      }
       final chapters = parseChapterResponse(book, json);
       if (chapters.isEmpty) {
-        reachedEnd = true;
-        break; // 真的翻到头了
+        reachedEnd = true; // list 存在但为空 = 真的翻到头了
+        break;
       }
       for (final c in chapters) {
         byIndex[c.index] = c;
@@ -431,7 +447,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         attempts: 2,
         baseDelay: const Duration(milliseconds: 1500),
       );
-      if (json == null) continue;
+      if (json == null || !_hasListField(json)) continue;
       for (final c in parseChapterResponse(book, json)) {
         byIndex[c.index] = c;
       }
@@ -455,6 +471,12 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     }
     return _normalizeOrder(dense);
   }
+
+  /// 响应体是否含 `list` 字段。
+  ///
+  /// 上游正常返回**一定有 list**（哪怕空数组）；
+  /// 没有 list 就说明这不是章节报文（限流/网关错误/未部署的函数）。
+  static bool _hasListField(Map<String, dynamic> json) => json.containsKey('list');
 
   /// 连续失败多少页后中止翻页（服务整体不可用时不白等）。
   static const int _abortAfterConsecutiveFailures = 4;

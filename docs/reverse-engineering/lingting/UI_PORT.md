@@ -1801,3 +1801,66 @@ m.lrts.me  -> 200（但 SSR 页面不含章节列表，章节必须走带签名�
 - ❌ **未能在设备上验证真实收敛过程**：核查期间 `lrts-menu` 全程 500
   （worker 起不来），一次章节都拿不到，无法制造"部分成功"的现场。
   待书源恢复后需复验：同一本书反复进入，目录章数应单调增长直到等于 `chapterCount`。
+
+#### 6.61 续：找到「目录不全」的**真正**根因（并纠正我前两轮的误判）
+
+我前两轮都归因于「Edge 代理 429/500」，**这是错的**，来自方法失误：
+curl 时漏了 `Referer` / `User-Agent` → 拿到 `apiStatus 483`，
+我误以为目录接口坏了。
+
+带全头实测直连（与 App 完全一致的请求形态）：
+```
+https://m.lrts.me/ajax/getBookMenu?bookId=29513169&pageNum=1&pageSize=60&sortType=0
+→ 200 {"apiStatus":0,"sections":793,...}   连续 3 次都 200
+完整翻页（自制脚本，逐页拉 + 校验 section）：
+  bookId=29513169 sections=793 需要 14 页
+  实际拿到 793 / 声明 793，缺失 0，空页 0，失败页 0
+```
+另外确认：**Edge 的 `lrts-menu` / `lrts-detail` 函数根本没部署**
+（`InvalidWorkerCreation: could not find an appropriate entrypoint`），
+只有 `lrts-search` / `lrts-play` 存在。所以目录**只能**走直连，
+而直连是好的 —— 我前两轮的方向完全错。
+
+**真根因（代码判定 bug）**：
+
+```dart
+final chapters = parseChapterResponse(book, json);
+if (chapters.isEmpty) { reachedEnd = true; break; }   // ← 错在这
+```
+
+限流/网关错误的报文**没有 `list` 字段**，形如：
+```json
+{"requestId":"…","code":"projectConcurrencyLimitExceeded","message":"…"}
+{"msg":"InvalidWorkerCreation: worker boot error","workerKey":"…"}
+```
+`parseChapterResponse` 取不到 list 就返回空数组 → 代码把「异常报文」
+当成「翻到头」→ **静默丢掉后半段，而且不标记为不全**。
+所以用户既看到目录缺，又看不到任何提示。
+
+修法：`_hasListField(json)` 区分两种"空"：
+- 有 `list` 且为空 → 真的翻到头（完整）
+- 没有 `list` → 异常报文，记为**失败页**、继续翻页、末尾补拉、标记不全
+
+**第二个真 bug**：`BookDetailState.error` **被赋值却从未渲染**。
+所以详情页对「服务不可用 / 目录不全」完全静默（只有播放页目录有告警条）。
+现已在目录 tab 顶部渲染：
+- 章节为空且有错误 → 显示错误
+- `total < Book.chapterCount` → 「目录可能不全：已加载 X 集，共 Y 集…」
+
+**设备实测（决定性证据）**：
+书「诡神冢」`sections=2986`（50 页），进详情页后查缓存表：
+```sql
+SELECT count(*), min(section), max(section), count(DISTINCT section)
+FROM book_chapters;
+→ 2986 | 1 | 2986 | 2986
+```
+count == distinct == max（且 min=1）→ **1..2986 无一缺号**，目录完整。
+
+> 顺带排除一个假警报：分段 chips 只显示到 `2301-2400集`，
+> 我一度以为 UI 少算了；实际 chips 是横向滚动列表，
+> uiautomator 只 dump 可见项。单测确认 2986 → 30 段、末段 `2901-2986集`。
+
+**教训**：
+1. 手工 curl 必须复刻 App 的完整请求头，否则会把「我的请求不对」
+   误判成「服务坏了」——我因此白跑了三轮。
+2. 「空列表」有两种语义（到底 / 报文异常），混为一谈就是静默丢数据。
