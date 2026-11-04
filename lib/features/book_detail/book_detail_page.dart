@@ -7,6 +7,7 @@ import '../../data/models/chapter.dart';
 import '../../data/models/source_rule.dart';
 import '../../data/repositories/book_repository.dart';
 import '../../data/repositories/play_history_repository.dart';
+import '../../services/chapter_catalog_service.dart';
 import '../../services/source_parser.dart';
 import '../../services/player_service.dart';
 import '../../services/audio_downloader.dart';
@@ -69,9 +70,17 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
   final SourceParser _parser = SourceParser();
   final BookRepository _bookRepo;
   final PlayHistoryRepository _historyRepo;
+
+  /// 目录服务（带缓存合并）。未注入时退化为直接问网络。
+  ChapterCatalogService? _catalog;
+
   bool _isCancelled = false;
 
-  BookDetailNotifier(this._bookRepo, this._historyRepo) : super(const BookDetailState());
+  BookDetailNotifier(this._bookRepo, this._historyRepo)
+      : super(const BookDetailState());
+
+  /// 注入目录服务（含跨会话缓存）。
+  void attachCatalog(ChapterCatalogService service) => _catalog = service;
 
   /// 重新拉取详情与章节（用户下拉刷新 / 想知道有没有更新时）。
   Future<void> reload() async {
@@ -97,7 +106,12 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
       final looksPlaceholder = int.tryParse(book.name) != null;
       final detailFailed = detailBook == null && looksPlaceholder;
 
-      final chapters = await _parser.getChapterList(source, book);
+      // 目录走「网络 + 缓存合并」：本次失败的页由历史缓存补上。
+      final expected = (detailBook ?? book).chapterCount ?? 0;
+      final chapters = _catalog != null
+          ? await _catalog!
+              .loadChapters(source, detailBook ?? book, expectedTotal: expected)
+          : await _parser.getChapterList(source, book);
       if (_isCancelled || !mounted) return;
 
       state = state.copyWith(
@@ -155,7 +169,10 @@ final bookDetailProvider =
     StateNotifierProvider<BookDetailNotifier, BookDetailState>((ref) {
   final bookRepo = ref.watch(bookRepositoryProvider);
   final historyRepo = ref.watch(playHistoryRepositoryProvider);
-  return BookDetailNotifier(bookRepo, historyRepo);
+  final notifier = BookDetailNotifier(bookRepo, historyRepo);
+  // 目录走带缓存的合并加载（大目录分页拉不全时可靠历史缓存补齐）
+  notifier.attachCatalog(ref.watch(chapterCatalogProvider));
+  return notifier;
 });
 
 /// 书籍详情页面

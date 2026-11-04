@@ -35,6 +35,12 @@ class Chapter {
   /// 缓存文件路径
   final String? cachePath;
 
+  /// 上游的**绝对序号**（懒人 `section`，1 起）。
+  /// 目录缓存需要它：缺页时列表 index 会连续化，
+  /// 但补拉/判完整性必须知道每章在书里的真实位置。
+  @JsonKey(includeIfNull: false)
+  final int? sectionIndex;
+
   Chapter({
     required this.chapterId,
     required this.bookId,
@@ -46,6 +52,7 @@ class Chapter {
     this.isVip = false,
     this.isCached = false,
     this.cachePath,
+    this.sectionIndex,
   });
 
   factory Chapter.fromJson(Map<String, dynamic> json) =>
@@ -64,6 +71,7 @@ class Chapter {
     bool? isVip,
     bool? isCached,
     String? cachePath,
+    int? sectionIndex,
   }) {
     return Chapter(
       chapterId: chapterId ?? this.chapterId,
@@ -76,6 +84,7 @@ class Chapter {
       isVip: isVip ?? this.isVip,
       isCached: isCached ?? this.isCached,
       cachePath: cachePath ?? this.cachePath,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
     );
   }
 }

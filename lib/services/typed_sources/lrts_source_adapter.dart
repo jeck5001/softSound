@@ -335,6 +335,7 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     required int pageSize,
     required SourceRule source,
     int attempts = 3,
+    Duration baseDelay = const Duration(milliseconds: 400),
   }) async {
     for (var i = 0; i < attempts; i++) {
       final response = await _get(
@@ -353,9 +354,10 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
         _logger.w('lrts 第 $page 页非暂时性失败，不再重试');
         return null;
       }
-      // 退避：400ms、800ms
       if (i < attempts - 1) {
-        await Future<void>.delayed(Duration(milliseconds: 400 * (1 << i)));
+        await Future<void>.delayed(
+          Duration(milliseconds: baseDelay.inMilliseconds * (1 << i)),
+        );
       }
     }
     return null;
@@ -367,41 +369,95 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
     if (bookId.trim().isEmpty) return [];
 
     // 真实抓包确认的分页参数：pageNum/pageSize/sortType（聆阅实际请求形态）。
-    // pageSize=60、sortType=0（正序）。
     //
-    // 关键：**任何一页失败都不能直接放弃**。
-    // 旧实现 `if (response == null) break;` 会在第 N 页失败时保留前 N-1 页
-    // 并静默丢弃后半段 —— 用户看到的就是「目录不全/数量不对」，
-    // 而且完全没有任何错误提示。Edge 有项目级并发限制（429），
-    // 大目录（5795 集 = 97 页）滚动拉取时命中概率很高。
-    final all = <Chapter>[];
+    // ⚠️ 失败页**绝不能中断后面的翻页**。
+    // 旧实现在第 N 页失败时 `break`，于是后面几百章全丢，
+    // 用户看到的就是「目录不全」，而且没有任何提示。
+    // 之所以敢跳过单页继续往后翻：每章响应里都带 `section`
+    // （该书内的绝对序号，见 parseChapterResponse），
+    // 所以缺页不会让后续章节错位，补拉时按 index 去重即可。
     const pageSize = 60;
+    final byIndex = <int, Chapter>{};
+    final failedPages = <int>[];
+    var sections = 0;
+    var consecutiveFailures = 0;
+    var reachedEnd = false;
+
     for (var page = 1; page <= _maxMenuPages; page++) {
-      final Map<String, dynamic>? json = await _getMenuPageWithRetry(
+      final json = await _getMenuPageWithRetry(
         bookId: bookId,
         page: page,
         pageSize: pageSize,
         source: source,
       );
       if (json == null) {
-        // 重试后仍失败：到此为止，但必须让上层知道目录可能不全。
-        _logger.w('lrts 第 $page 页重试后仍失败，目录不完整（已取 ${all.length} 章）');
-        _lastFetchWasPartial = all.isNotEmpty;
-        break;
+        failedPages.add(page);
+        consecutiveFailures++;
+        // 熔断：连续多页失败说明服务整体不可用，
+        // 继续往后翻只是白等（97 页 × 重试会拖几分钟）。
+        if (consecutiveFailures >= _abortAfterConsecutiveFailures) {
+          _logger.w('lrts 连续 $consecutiveFailures 页失败，中止翻页'
+              '（已取 ${byIndex.length} 章）');
+          break;
+        }
+        continue;
       }
+      consecutiveFailures = 0;
 
       final chapters = parseChapterResponse(book, json);
-      if (chapters.isEmpty) break; // 真的翻到头了
-      all.addAll(chapters);
-
-      // 到达总数即停（响应含 sections 总数）
-      final sections = json['sections'];
-      if (sections is int && all.length >= sections) return _normalizeOrder(all);
+      if (chapters.isEmpty) {
+        reachedEnd = true;
+        break; // 真的翻到头了
+      }
+      for (final c in chapters) {
+        byIndex[c.index] = c;
+      }
+      final s = json['sections'];
+      if (s is int && s > 0) sections = s;
+      if (sections > 0 && byIndex.length >= sections) {
+        // 取满上游声明的总数 = 完整，不是"不全"
+        reachedEnd = true;
+        break;
+      }
     }
-    // 走到这里说明没对上 sections 总数（翻页上限 / 中途失败）
-    _lastFetchWasPartial = all.isNotEmpty;
-    return _normalizeOrder(all);
+
+    // 补拉失败页：退避更长（限流往往需要时间恢复），但仍设上限防卡死。
+    for (final page in failedPages) {
+      final json = await _getMenuPageWithRetry(
+        bookId: bookId,
+        page: page,
+        pageSize: pageSize,
+        source: source,
+        attempts: 2,
+        baseDelay: const Duration(milliseconds: 1500),
+      );
+      if (json == null) continue;
+      for (final c in parseChapterResponse(book, json)) {
+        byIndex[c.index] = c;
+      }
+      final s = json['sections'];
+      if (s is int && s > 0) sections = s;
+    }
+
+    final sorted = byIndex.values.toList()
+      ..sort((a, b) => a.index.compareTo(b.index));
+    // 重新按连续位置编号（缺页时 index 会有空洞，播放器按下标取章需要连续）
+    final dense = <Chapter>[];
+    for (var i = 0; i < sorted.length; i++) {
+      dense.add(sorted[i].copyWith(index: i));
+    }
+
+    _lastFetchWasPartial =
+        !reachedEnd || (sections > 0 && dense.length < sections);
+    if (_lastFetchWasPartial) {
+      _logger.w('lrts 目录可能不全：取到 ${dense.length} 章'
+          '${sections > 0 ? '，声明 $sections 章' : ''}（失败页 ${failedPages.length} 个）');
+    }
+    return _normalizeOrder(dense);
   }
+
+  /// 连续失败多少页后中止翻页（服务整体不可用时不白等）。
+  static const int _abortAfterConsecutiveFailures = 4;
 
   /// 章节顺序兜底（聆阅 #17865 `ensureChaptersAscending`）：
   /// 上游若明显倒序（≥70% 相邻集号递减）则整表翻转并重建索引。
@@ -460,6 +516,8 @@ class LrtsSourceAdapter implements TypedSourceAdapter {
           chapterId: token,
           bookId: book.bookId,
           index: sectionIndex - 1, // 对外索引从 0 开始
+          // 保留上游绝对序号：目录缓存靠它跨会话补齐缺页而不错位
+          sectionIndex: sectionIndex,
           name: name,
           // url 承载章节 token，供后续换取音频地址
           url: token,

@@ -9,6 +9,7 @@ import 'tables/books_table.dart';
 import 'tables/play_history_table.dart';
 import 'tables/download_chapters_table.dart';
 import 'tables/listening_stats_table.dart';
+import 'tables/book_chapters_table.dart';
 
 part 'app_database.g.dart';
 
@@ -18,6 +19,7 @@ part 'app_database.g.dart';
   PlayHistoryTable,
   DownloadChaptersTable,
   ListeningStatsTable,
+  BookChaptersTable,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -26,7 +28,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration {
@@ -42,6 +44,10 @@ class AppDatabase extends _$AppDatabase {
         // v2 -> v3：新增累计收听统计表。
         if (from < 3) {
           await m.createTable(listeningStatsTable);
+        }
+        // v3 -> v4：新增目录缓存表（大目录分页可跨会话累积补齐）。
+        if (from < 4) {
+          await m.createTable(bookChaptersTable);
         }
       },
     );

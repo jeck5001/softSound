@@ -52,10 +52,51 @@ void main() {
       expect(block.contains('_getMenuPageWithRetry'), isTrue);
     });
 
-    test('取不全时记录日志，便于定位', () {
+    test('取不全时记录日志，且带上已取到的数量', () {
       final src =
           read('lib/services/typed_sources/lrts_source_adapter.dart');
-      expect(src.contains('目录不完整'), isTrue);
+      // 文案允许「目录不完整 / 目录可能不全」任一，但必须留痕并给出规模，
+      // 否则线上无法判断到底差多少。
+      expect(
+        src.contains('目录不完整') || src.contains('目录可能不全'),
+        isTrue,
+        reason: '拉不全必须打日志',
+      );
+      expect(
+        RegExp(r'目录(不完整|可能不全)[^;]*\$\{?dense\.length')
+                .hasMatch(src) ||
+            src.contains('已取 \${') ||
+            src.contains('取到 \${'),
+        isTrue,
+        reason: '日志要包含已取章节数，便于判断缺多少',
+      );
+    });
+
+    test('失败页不中断后续翻页（跳过 + 末尾补拉）', () {
+      final src =
+          read('lib/services/typed_sources/lrts_source_adapter.dart');
+      final start = src.indexOf('Future<List<Chapter>> getChapterList');
+      final block = src.substring(start, start + 2600);
+      expect(
+        block.contains('failedPages.add(page)'),
+        isTrue,
+        reason: '失败页要记下来，而不是当场放弃后面的页',
+      );
+      expect(
+        block.contains('for (final page in failedPages)'),
+        isTrue,
+        reason: '翻完一轮后要集中补拉失败页',
+      );
+    });
+
+    test('服务整体不可用时要熔断，不能白等几百次重试', () {
+      final src =
+          read('lib/services/typed_sources/lrts_source_adapter.dart');
+      expect(
+        src.contains('_abortAfterConsecutiveFailures'),
+        isTrue,
+        reason: '连续多页失败说明服务挂了，继续翻只会让目录转圈几分钟',
+      );
     });
   });
 

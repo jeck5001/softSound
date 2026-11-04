@@ -19,6 +19,7 @@ import '../theme/subtitle_overlay.dart';
 import 'audio_effects.dart';
 import 'lingting_audio_handler.dart';
 import 'media_metadata.dart';
+import 'chapter_catalog_service.dart';
 import 'source_parser.dart';
 import 'system_settings_bridge.dart';
 
@@ -226,6 +227,11 @@ class PlayerNotifier extends StateNotifier<PlayerState>
 
   /// 注入书籍仓库（由 provider 在构造后调用）。
   void attachBookRepository(BookRepository repo) => _bookRepo = repo;
+
+  /// 注入目录服务（带跨会话缓存）。
+  /// 大目录要连拉近百页，单次很难拉全；缓存能让缺页在下次补齐。
+  ChapterCatalogService? _catalog;
+  void attachCatalog(ChapterCatalogService service) => _catalog = service;
 
   /// 注入媒体会话处理器，并把「通知栏/锁屏的切章意图」接回来。
   void attachAudioHandler(LingtingAudioHandler handler) {
@@ -526,7 +532,10 @@ class PlayerNotifier extends StateNotifier<PlayerState>
 
     List<Chapter> chapters;
     try {
-      chapters = await _parser.getChapterList(source, book);
+      chapters = _catalog != null
+          ? await _catalog!
+              .loadChapters(source, book, expectedTotal: book.chapterCount ?? 0)
+          : await _parser.getChapterList(source, book);
     } catch (e) {
       _logger.w('恢复会话：拉取章节失败', error: e);
       chapters = const [];
@@ -996,7 +1005,13 @@ class PlayerNotifier extends StateNotifier<PlayerState>
     final source = state.currentSource;
     if (book == null || source == null) return false;
     try {
-      final fresh = await _parser.getChapterList(source, book);
+      final fresh = _catalog != null
+          ? await _catalog!.loadChapters(
+              source,
+              book,
+              expectedTotal: book.chapterCount ?? 0,
+            )
+          : await _parser.getChapterList(source, book);
       if (fresh.length > state.chapters.length) {
         _logger.d('章节有更新: ${state.chapters.length} -> ${fresh.length}');
         state = state.copyWith(chapters: fresh);
@@ -1080,6 +1095,7 @@ final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) 
 
   notifier.attachStats(ref.watch(statsRepositoryProvider));
   notifier.attachBookRepository(ref.watch(bookRepositoryProvider));
+  notifier.attachCatalog(ref.watch(chapterCatalogProvider));
   // 字幕层与播放器共享全局 subtitleProvider（播放页/阅读页都在 watch 它）。
   notifier.attachSubtitle(ref.read(subtitleProvider.notifier));
   notifier.startDeviceMonitoring();

@@ -2424,6 +2424,617 @@ class ListeningStatsTableCompanion
   }
 }
 
+class $BookChaptersTableTable extends BookChaptersTable
+    with TableInfo<$BookChaptersTableTable, BookChaptersTableData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $BookChaptersTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _bookIdMeta = const VerificationMeta('bookId');
+  @override
+  late final GeneratedColumn<String> bookId = GeneratedColumn<String>(
+    'book_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _sectionMeta = const VerificationMeta(
+    'section',
+  );
+  @override
+  late final GeneratedColumn<int> section = GeneratedColumn<int>(
+    'section',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chapterIdMeta = const VerificationMeta(
+    'chapterId',
+  );
+  @override
+  late final GeneratedColumn<String> chapterId = GeneratedColumn<String>(
+    'chapter_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _isVipMeta = const VerificationMeta('isVip');
+  @override
+  late final GeneratedColumn<bool> isVip = GeneratedColumn<bool>(
+    'is_vip',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_vip" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _audioUrlMeta = const VerificationMeta(
+    'audioUrl',
+  );
+  @override
+  late final GeneratedColumn<String> audioUrl = GeneratedColumn<String>(
+    'audio_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    bookId,
+    sourceId,
+    section,
+    chapterId,
+    name,
+    durationMs,
+    isVip,
+    audioUrl,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'book_chapters';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<BookChaptersTableData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('book_id')) {
+      context.handle(
+        _bookIdMeta,
+        bookId.isAcceptableOrUnknown(data['book_id']!, _bookIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookIdMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    }
+    if (data.containsKey('section')) {
+      context.handle(
+        _sectionMeta,
+        section.isAcceptableOrUnknown(data['section']!, _sectionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sectionMeta);
+    }
+    if (data.containsKey('chapter_id')) {
+      context.handle(
+        _chapterIdMeta,
+        chapterId.isAcceptableOrUnknown(data['chapter_id']!, _chapterIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_chapterIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('is_vip')) {
+      context.handle(
+        _isVipMeta,
+        isVip.isAcceptableOrUnknown(data['is_vip']!, _isVipMeta),
+      );
+    }
+    if (data.containsKey('audio_url')) {
+      context.handle(
+        _audioUrlMeta,
+        audioUrl.isAcceptableOrUnknown(data['audio_url']!, _audioUrlMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {bookId, section},
+  ];
+  @override
+  BookChaptersTableData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return BookChaptersTableData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      bookId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_id'],
+      )!,
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      )!,
+      section: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}section'],
+      )!,
+      chapterId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      isVip: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_vip'],
+      )!,
+      audioUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}audio_url'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $BookChaptersTableTable createAlias(String alias) {
+    return $BookChaptersTableTable(attachedDatabase, alias);
+  }
+}
+
+class BookChaptersTableData extends DataClass
+    implements Insertable<BookChaptersTableData> {
+  final int id;
+
+  /// 书籍 ID（与 BooksTable.bookId 对应）。
+  final String bookId;
+
+  /// 书源 ID，便于按源清理。
+  final String sourceId;
+
+  /// 上游 `section` 序号（1 起）。**存原值**，缺页时会有空洞，
+  /// 正是靠它判断目录是否完整。
+  final int section;
+
+  /// 章节 token（真实响应中 id 与 sectionId 相同），换音频地址要用。
+  final String chapterId;
+  final String name;
+
+  /// 时长（毫秒）；上游未给时为 0。
+  final int durationMs;
+
+  /// 是否付费/不可听（上游 feeType/payType/cantListen 归一）。
+  final bool isVip;
+
+  /// 直接可用的音频地址（多数章节为空，播放时再换）。
+  final String? audioUrl;
+  final DateTime updatedAt;
+  const BookChaptersTableData({
+    required this.id,
+    required this.bookId,
+    required this.sourceId,
+    required this.section,
+    required this.chapterId,
+    required this.name,
+    required this.durationMs,
+    required this.isVip,
+    this.audioUrl,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['book_id'] = Variable<String>(bookId);
+    map['source_id'] = Variable<String>(sourceId);
+    map['section'] = Variable<int>(section);
+    map['chapter_id'] = Variable<String>(chapterId);
+    map['name'] = Variable<String>(name);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['is_vip'] = Variable<bool>(isVip);
+    if (!nullToAbsent || audioUrl != null) {
+      map['audio_url'] = Variable<String>(audioUrl);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  BookChaptersTableCompanion toCompanion(bool nullToAbsent) {
+    return BookChaptersTableCompanion(
+      id: Value(id),
+      bookId: Value(bookId),
+      sourceId: Value(sourceId),
+      section: Value(section),
+      chapterId: Value(chapterId),
+      name: Value(name),
+      durationMs: Value(durationMs),
+      isVip: Value(isVip),
+      audioUrl: audioUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioUrl),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory BookChaptersTableData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return BookChaptersTableData(
+      id: serializer.fromJson<int>(json['id']),
+      bookId: serializer.fromJson<String>(json['bookId']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      section: serializer.fromJson<int>(json['section']),
+      chapterId: serializer.fromJson<String>(json['chapterId']),
+      name: serializer.fromJson<String>(json['name']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      isVip: serializer.fromJson<bool>(json['isVip']),
+      audioUrl: serializer.fromJson<String?>(json['audioUrl']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'bookId': serializer.toJson<String>(bookId),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'section': serializer.toJson<int>(section),
+      'chapterId': serializer.toJson<String>(chapterId),
+      'name': serializer.toJson<String>(name),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'isVip': serializer.toJson<bool>(isVip),
+      'audioUrl': serializer.toJson<String?>(audioUrl),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  BookChaptersTableData copyWith({
+    int? id,
+    String? bookId,
+    String? sourceId,
+    int? section,
+    String? chapterId,
+    String? name,
+    int? durationMs,
+    bool? isVip,
+    Value<String?> audioUrl = const Value.absent(),
+    DateTime? updatedAt,
+  }) => BookChaptersTableData(
+    id: id ?? this.id,
+    bookId: bookId ?? this.bookId,
+    sourceId: sourceId ?? this.sourceId,
+    section: section ?? this.section,
+    chapterId: chapterId ?? this.chapterId,
+    name: name ?? this.name,
+    durationMs: durationMs ?? this.durationMs,
+    isVip: isVip ?? this.isVip,
+    audioUrl: audioUrl.present ? audioUrl.value : this.audioUrl,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  BookChaptersTableData copyWithCompanion(BookChaptersTableCompanion data) {
+    return BookChaptersTableData(
+      id: data.id.present ? data.id.value : this.id,
+      bookId: data.bookId.present ? data.bookId.value : this.bookId,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      section: data.section.present ? data.section.value : this.section,
+      chapterId: data.chapterId.present ? data.chapterId.value : this.chapterId,
+      name: data.name.present ? data.name.value : this.name,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      isVip: data.isVip.present ? data.isVip.value : this.isVip,
+      audioUrl: data.audioUrl.present ? data.audioUrl.value : this.audioUrl,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookChaptersTableData(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('section: $section, ')
+          ..write('chapterId: $chapterId, ')
+          ..write('name: $name, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('isVip: $isVip, ')
+          ..write('audioUrl: $audioUrl, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    bookId,
+    sourceId,
+    section,
+    chapterId,
+    name,
+    durationMs,
+    isVip,
+    audioUrl,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is BookChaptersTableData &&
+          other.id == this.id &&
+          other.bookId == this.bookId &&
+          other.sourceId == this.sourceId &&
+          other.section == this.section &&
+          other.chapterId == this.chapterId &&
+          other.name == this.name &&
+          other.durationMs == this.durationMs &&
+          other.isVip == this.isVip &&
+          other.audioUrl == this.audioUrl &&
+          other.updatedAt == this.updatedAt);
+}
+
+class BookChaptersTableCompanion
+    extends UpdateCompanion<BookChaptersTableData> {
+  final Value<int> id;
+  final Value<String> bookId;
+  final Value<String> sourceId;
+  final Value<int> section;
+  final Value<String> chapterId;
+  final Value<String> name;
+  final Value<int> durationMs;
+  final Value<bool> isVip;
+  final Value<String?> audioUrl;
+  final Value<DateTime> updatedAt;
+  const BookChaptersTableCompanion({
+    this.id = const Value.absent(),
+    this.bookId = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.section = const Value.absent(),
+    this.chapterId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.isVip = const Value.absent(),
+    this.audioUrl = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  BookChaptersTableCompanion.insert({
+    this.id = const Value.absent(),
+    required String bookId,
+    this.sourceId = const Value.absent(),
+    required int section,
+    required String chapterId,
+    required String name,
+    this.durationMs = const Value.absent(),
+    this.isVip = const Value.absent(),
+    this.audioUrl = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : bookId = Value(bookId),
+       section = Value(section),
+       chapterId = Value(chapterId),
+       name = Value(name);
+  static Insertable<BookChaptersTableData> custom({
+    Expression<int>? id,
+    Expression<String>? bookId,
+    Expression<String>? sourceId,
+    Expression<int>? section,
+    Expression<String>? chapterId,
+    Expression<String>? name,
+    Expression<int>? durationMs,
+    Expression<bool>? isVip,
+    Expression<String>? audioUrl,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (bookId != null) 'book_id': bookId,
+      if (sourceId != null) 'source_id': sourceId,
+      if (section != null) 'section': section,
+      if (chapterId != null) 'chapter_id': chapterId,
+      if (name != null) 'name': name,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (isVip != null) 'is_vip': isVip,
+      if (audioUrl != null) 'audio_url': audioUrl,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  BookChaptersTableCompanion copyWith({
+    Value<int>? id,
+    Value<String>? bookId,
+    Value<String>? sourceId,
+    Value<int>? section,
+    Value<String>? chapterId,
+    Value<String>? name,
+    Value<int>? durationMs,
+    Value<bool>? isVip,
+    Value<String?>? audioUrl,
+    Value<DateTime>? updatedAt,
+  }) {
+    return BookChaptersTableCompanion(
+      id: id ?? this.id,
+      bookId: bookId ?? this.bookId,
+      sourceId: sourceId ?? this.sourceId,
+      section: section ?? this.section,
+      chapterId: chapterId ?? this.chapterId,
+      name: name ?? this.name,
+      durationMs: durationMs ?? this.durationMs,
+      isVip: isVip ?? this.isVip,
+      audioUrl: audioUrl ?? this.audioUrl,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (bookId.present) {
+      map['book_id'] = Variable<String>(bookId.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (section.present) {
+      map['section'] = Variable<int>(section.value);
+    }
+    if (chapterId.present) {
+      map['chapter_id'] = Variable<String>(chapterId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (isVip.present) {
+      map['is_vip'] = Variable<bool>(isVip.value);
+    }
+    if (audioUrl.present) {
+      map['audio_url'] = Variable<String>(audioUrl.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('BookChaptersTableCompanion(')
+          ..write('id: $id, ')
+          ..write('bookId: $bookId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('section: $section, ')
+          ..write('chapterId: $chapterId, ')
+          ..write('name: $name, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('isVip: $isVip, ')
+          ..write('audioUrl: $audioUrl, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2435,6 +3046,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $DownloadChaptersTableTable(this);
   late final $ListeningStatsTableTable listeningStatsTable =
       $ListeningStatsTableTable(this);
+  late final $BookChaptersTableTable bookChaptersTable =
+      $BookChaptersTableTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2444,6 +3057,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     playHistoryTable,
     downloadChaptersTable,
     listeningStatsTable,
+    bookChaptersTable,
   ];
 }
 
@@ -3656,6 +4270,310 @@ typedef $$ListeningStatsTableTableProcessedTableManager =
       ListeningStatsTableData,
       PrefetchHooks Function()
     >;
+typedef $$BookChaptersTableTableCreateCompanionBuilder =
+    BookChaptersTableCompanion Function({
+      Value<int> id,
+      required String bookId,
+      Value<String> sourceId,
+      required int section,
+      required String chapterId,
+      required String name,
+      Value<int> durationMs,
+      Value<bool> isVip,
+      Value<String?> audioUrl,
+      Value<DateTime> updatedAt,
+    });
+typedef $$BookChaptersTableTableUpdateCompanionBuilder =
+    BookChaptersTableCompanion Function({
+      Value<int> id,
+      Value<String> bookId,
+      Value<String> sourceId,
+      Value<int> section,
+      Value<String> chapterId,
+      Value<String> name,
+      Value<int> durationMs,
+      Value<bool> isVip,
+      Value<String?> audioUrl,
+      Value<DateTime> updatedAt,
+    });
+
+class $$BookChaptersTableTableFilterComposer
+    extends Composer<_$AppDatabase, $BookChaptersTableTable> {
+  $$BookChaptersTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookId => $composableBuilder(
+    column: $table.bookId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get section => $composableBuilder(
+    column: $table.section,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterId => $composableBuilder(
+    column: $table.chapterId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isVip => $composableBuilder(
+    column: $table.isVip,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get audioUrl => $composableBuilder(
+    column: $table.audioUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$BookChaptersTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $BookChaptersTableTable> {
+  $$BookChaptersTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bookId => $composableBuilder(
+    column: $table.bookId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get section => $composableBuilder(
+    column: $table.section,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterId => $composableBuilder(
+    column: $table.chapterId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isVip => $composableBuilder(
+    column: $table.isVip,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get audioUrl => $composableBuilder(
+    column: $table.audioUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$BookChaptersTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $BookChaptersTableTable> {
+  $$BookChaptersTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get bookId =>
+      $composableBuilder(column: $table.bookId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<int> get section =>
+      $composableBuilder(column: $table.section, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterId =>
+      $composableBuilder(column: $table.chapterId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isVip =>
+      $composableBuilder(column: $table.isVip, builder: (column) => column);
+
+  GeneratedColumn<String> get audioUrl =>
+      $composableBuilder(column: $table.audioUrl, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$BookChaptersTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $BookChaptersTableTable,
+          BookChaptersTableData,
+          $$BookChaptersTableTableFilterComposer,
+          $$BookChaptersTableTableOrderingComposer,
+          $$BookChaptersTableTableAnnotationComposer,
+          $$BookChaptersTableTableCreateCompanionBuilder,
+          $$BookChaptersTableTableUpdateCompanionBuilder,
+          (
+            BookChaptersTableData,
+            BaseReferences<
+              _$AppDatabase,
+              $BookChaptersTableTable,
+              BookChaptersTableData
+            >,
+          ),
+          BookChaptersTableData,
+          PrefetchHooks Function()
+        > {
+  $$BookChaptersTableTableTableManager(
+    _$AppDatabase db,
+    $BookChaptersTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$BookChaptersTableTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$BookChaptersTableTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$BookChaptersTableTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> bookId = const Value.absent(),
+                Value<String> sourceId = const Value.absent(),
+                Value<int> section = const Value.absent(),
+                Value<String> chapterId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<bool> isVip = const Value.absent(),
+                Value<String?> audioUrl = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => BookChaptersTableCompanion(
+                id: id,
+                bookId: bookId,
+                sourceId: sourceId,
+                section: section,
+                chapterId: chapterId,
+                name: name,
+                durationMs: durationMs,
+                isVip: isVip,
+                audioUrl: audioUrl,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String bookId,
+                Value<String> sourceId = const Value.absent(),
+                required int section,
+                required String chapterId,
+                required String name,
+                Value<int> durationMs = const Value.absent(),
+                Value<bool> isVip = const Value.absent(),
+                Value<String?> audioUrl = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => BookChaptersTableCompanion.insert(
+                id: id,
+                bookId: bookId,
+                sourceId: sourceId,
+                section: section,
+                chapterId: chapterId,
+                name: name,
+                durationMs: durationMs,
+                isVip: isVip,
+                audioUrl: audioUrl,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$BookChaptersTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $BookChaptersTableTable,
+      BookChaptersTableData,
+      $$BookChaptersTableTableFilterComposer,
+      $$BookChaptersTableTableOrderingComposer,
+      $$BookChaptersTableTableAnnotationComposer,
+      $$BookChaptersTableTableCreateCompanionBuilder,
+      $$BookChaptersTableTableUpdateCompanionBuilder,
+      (
+        BookChaptersTableData,
+        BaseReferences<
+          _$AppDatabase,
+          $BookChaptersTableTable,
+          BookChaptersTableData
+        >,
+      ),
+      BookChaptersTableData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3668,4 +4586,6 @@ class $AppDatabaseManager {
       $$DownloadChaptersTableTableTableManager(_db, _db.downloadChaptersTable);
   $$ListeningStatsTableTableTableManager get listeningStatsTable =>
       $$ListeningStatsTableTableTableManager(_db, _db.listeningStatsTable);
+  $$BookChaptersTableTableTableManager get bookChaptersTable =>
+      $$BookChaptersTableTableTableManager(_db, _db.bookChaptersTable);
 }

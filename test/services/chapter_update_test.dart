@@ -18,15 +18,38 @@ void main() {
   String read(String p) => File(p).readAsStringSync();
 
   group('章节列表不缓存（每次实时拉）', () {
-    test('数据库没有章节表', () {
-      final dir = Directory('lib/data/database/tables');
-      final files = dir.listSync().whereType<File>().map((f) =>
-          f.path.split('/').last).toList();
-      expect(
-        files.any((f) => f.contains('chapter') && !f.contains('download')),
-        isFalse,
-        reason: '有章节表就意味着会读到过期目录',
-      );
+    // 原断言：「数据库不该有章节表，否则会读到过期目录」。
+    // 担心是对的，但它把「缓存」与「过期」画了等号。
+    // 用户实测「目录反复加载不全」证明：不缓存时，书源代理 429/500
+    // 下每次从第 1 页重来 = 永远差几页。
+    // 因此改成允许缓存 + 强制防过期，并把不变量写成可测的形式。
+    test('章节缓存必须有过期上限（不会永久读到旧目录）', () {
+      final src = read('lib/services/chapter_catalog_service.dart');
+      expect(src.contains('cacheTtl'), isTrue,
+          reason: '缓存必须有 TTL，否则上游删章/改序会永久残留');
+      expect(src.contains('maxAge'), isTrue,
+          reason: '读缓存必须按时间过滤，不能无条件取用');
+    });
+
+    test('本次拉全时整体替换缓存（不残留已删除章节）', () {
+      final src = read('lib/services/chapter_catalog_service.dart');
+      final i = src.indexOf('final complete =');
+      expect(i, greaterThan(0));
+      final block = src.substring(i, i + 700);
+      expect(block.contains('clear('), isTrue);
+      expect(block.contains('upsert('), isTrue);
+    });
+
+    test('仍然每次先走网络（缓存只补洞，不是主数据源）', () {
+      final src = read('lib/services/chapter_catalog_service.dart');
+      final load = src.indexOf('Future<List<Chapter>> loadChapters');
+      final block = src.substring(load, load + 1200);
+      final netPos = block.indexOf('_parser.getChapterList');
+      final cachePos = block.indexOf('_catalog.load');
+      expect(netPos, greaterThan(-1));
+      expect(cachePos, greaterThan(-1));
+      expect(netPos, lessThan(cachePos),
+          reason: '顺序必须是：先网络，后拿缓存补洞');
     });
 
     test('播放器恢复会话时重新拉章节', () {
