@@ -1,9 +1,9 @@
 {
-  "version_code": 6,
-  "version_name": "0.0.6",
-  "update_description": "修复目录停在整 300 集：网络抖动不再被误判为确定失败，熔断阈值 4→10，并加上请求超时",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.6/qingting-0.0.6.apk",
-  "sha256": "f080f2162bb571bde0a40bc90ac1a62f5f313411962b95695d47f40952698790",
+  "version_code": 7,
+  "version_name": "0.0.7",
+  "update_description": "修复酷我目录停在 300 集（每页被上游截顶却误判末页）；修好告警文案占位符与详情页标题卡在「加载书籍信息…」",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.7/qingting-0.0.7.apk",
+  "sha256": "a01b2a0741214655d1063faea9d084987fa9c6e2f3215ca2790acaabd7562339",
   "force_update": false,
   "min_supported_code": 1
 }
