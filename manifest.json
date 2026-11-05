@@ -1,9 +1,9 @@
 {
-  "version_code": 7,
-  "version_name": "0.0.7",
-  "update_description": "修复酷我目录停在 300 集（每页被上游截顶却误判末页）；修好告警文案占位符与详情页标题卡在「加载书籍信息…」",
-  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.7/qingting-0.0.7.apk",
-  "sha256": "a01b2a0741214655d1063faea9d084987fa9c6e2f3215ca2790acaabd7562339",
+  "version_code": 8,
+  "version_name": "0.0.8",
+  "update_description": "修复搜索/历史/分类进详情时标题卡在「加载书籍信息…」：统一书籍详情路由，7 处入口都带上本地已知的书名与封面",
+  "download_url": "https://github.com/jeck5001/softSound/releases/download/v0.0.8/qingting-0.0.8.apk",
+  "sha256": "30b1b5b92aeef207d91e52958b1cd1c9b601383d964c639ba26c364276eaac50",
   "force_update": false,
   "min_supported_code": 1
 }
