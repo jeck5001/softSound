@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:soft_sound/app/book_routes.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -217,7 +218,11 @@ class _CategoryBooksPageState extends ConsumerState<CategoryBooksPage> {
   Widget _buildBookRow(BuildContext context, KuwoRankBook b) {
     final c = context.appColors;
     return InkWell(
-      onTap: () => context.push('/book/xiaoKu_${b.id}'),
+      onTap: () => context.push(bookDetailRoute(
+        'xiaoKu_${b.id}',
+        name: b.title,
+        cover: b.cover,
+      )),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(

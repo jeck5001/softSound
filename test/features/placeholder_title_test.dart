@@ -78,16 +78,23 @@ void main() {
       );
     });
 
-    test('书架跳转必须带上本地已知的书名与封面', () {
+    test('书架跳转必须走统一路由构造器（带书名与封面）', () {
       final src = File(
         'lib/features/bookshelf/bookshelf_page.dart',
       ).readAsStringSync();
+      // 实现细节（query 怎么拼）由 test/app/book_routes_test.dart 断言；
+      // 这里只守"入口不许裸拼路径"这条不变量。
       expect(
-        src.contains("'name': book.name"),
+        src.contains('bookDetailRouteForBook(book)') ||
+            src.contains('bookDetailRoute('),
         isTrue,
         reason: '只 push bookId 会让详情页退回占位态',
       );
-      expect(src.contains("'cover': book.coverUrl"), isTrue);
+      expect(
+        src.contains("'/book/"),
+        isFalse,
+        reason: '不许再手拼裸路径',
+      );
     });
 
     test('播放器也守住同样的占位过滤', () {

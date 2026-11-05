@@ -79,6 +79,23 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
   BookDetailNotifier(this._bookRepo, this._historyRepo)
       : super(const BookDetailState());
 
+  /// 名字可信度：占位/纯数字 id 最低，空串更低。
+  /// 用于「详情结果不许把好名字换成占位名」的比较。
+  static int _nameQuality(String name) {
+    final t = name.trim();
+    if (t.isEmpty) return 0;
+    if (PlayerNotifier.isPlaceholderBook(Book(
+          bookId: '',
+          sourceId: '',
+          name: t,
+          detailUrl: '',
+        ))) {
+      return 1;
+    }
+    if (int.tryParse(t) != null) return 1;
+    return 2;
+  }
+
   /// 注入目录服务（含跨会话缓存）。
   void attachCatalog(ChapterCatalogService service) => _catalog = service;
 
@@ -129,6 +146,23 @@ class BookDetailNotifier extends StateNotifier<BookDetailState> {
             latestChapter: stored.latestChapter,
           );
         }
+      }
+      // 详情结果不许把好名字换成占位名。
+      // 酷我的 `getBookDetail` 是 `=> book` 原样返回，返回的对象可能
+      // 就是个 name 为占位串的 Book；若直接采用，会把路由带进来的
+      // 真名（搜索/书架/首页都有）覆盖回「加载书籍信息…」。
+      if (detailBook != null &&
+          detailBook.bookId == book.bookId &&
+          _nameQuality(detailBook.name) < _nameQuality(book.name)) {
+        detailBook = detailBook.copyWith(
+          name: book.name,
+          author: book.author,
+          narrator: book.narrator,
+          coverUrl: (book.coverUrl?.isNotEmpty ?? false)
+              ? book.coverUrl
+              : detailBook.coverUrl,
+          intro: (book.intro?.isNotEmpty ?? false) ? book.intro : detailBook.intro,
+        );
       }
       final detailFailed = detailBook == null && startsAsPlaceholder;
 

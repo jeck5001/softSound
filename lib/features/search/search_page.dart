@@ -13,6 +13,7 @@ import '../../theme/app_strings.dart';
 import '../../theme/app_widgets.dart';
 import '../source_manager/source_manager_page.dart';
 import '../book_detail/book_detail_page.dart';
+import 'package:soft_sound/app/book_routes.dart';
 
 /// 搜索状态
 class SearchState {
@@ -573,7 +574,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
 
     ref.read(bookDetailProvider.notifier).loadBook(book, source);
-    context.push('/book/${book.bookId}');
+    context.push(bookDetailRouteForBook(book));
   }
 }
 

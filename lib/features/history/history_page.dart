@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:soft_sound/app/book_routes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -204,7 +205,7 @@ class _HistoryTile extends ConsumerWidget {
         if (ref.context.mounted) ref.invalidate(historyEntriesProvider);
       },
       child: GestureDetector(
-        onTap: () => context.push('/book/${entry.book.bookId}'),
+        onTap: () => context.push(bookDetailRouteForBook(entry.book)),
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(

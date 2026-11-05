@@ -7,7 +7,7 @@ import '../../data/models/book.dart';
 import '../../data/repositories/book_repository.dart';
 import '../../data/repositories/play_history_repository.dart';
 import '../../data/repositories/download_repository.dart';
-import '../../services/player_service.dart';
+import 'package:soft_sound/app/book_routes.dart';
 import '../source_manager/source_manager_page.dart';
 import '../book_detail/book_detail_page.dart';
 import '../../theme/app_colors.dart';
@@ -426,22 +426,9 @@ class BookshelfPage extends ConsumerWidget {
       orElse: () => sources.first,
     );
     BookDetailPageExt.loadBook(ref, book, source);
-    // 把本地已知的书名与封面一并带上：路由若只带 bookId，详情页会先造一个
-    // 「加载书籍信息…」占位 Book 等详情接口补全；而详情接口失败
-    // （酷我 `getBookDetail` 常失败）时，标题就永久卡在占位串上。
-    final query = <String, String>{
-      if (book.name.trim().isNotEmpty &&
-          !PlayerNotifier.isPlaceholderBook(book))
-        'name': book.name,
-      if ((book.coverUrl ?? '').trim().isNotEmpty)
-        'cover': book.coverUrl!.trim(),
-    };
-    context.push(
-      Uri(
-        path: '/book/${book.bookId}',
-        queryParameters: query.isEmpty ? null : query,
-      ).toString(),
-    );
+    // 统一走 bookDetailRoute：带上本地已知的书名与封面，
+    // 否则详情接口失败时标题会永久卡在「加载书籍信息…」。
+    context.push(bookDetailRouteForBook(book));
   }
 
   void _showDeleteDialog(BuildContext context, WidgetRef ref, Book book) {

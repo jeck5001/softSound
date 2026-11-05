@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:soft_sound/app/book_routes.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -186,7 +187,7 @@ class _ResumeListenCard extends ConsumerWidget {
             context.push('/player');
           } else {
             // 章节拉取失败：退回详情页，让用户在那里重试
-            context.push('/book/${last.book.bookId}');
+            context.push(bookDetailRouteForBook(last.book));
           }
         },
         child: Container(
@@ -665,7 +666,11 @@ class _FocusCarousel extends StatelessWidget {
           final b = books[i];
           return InkWell(
             onTap: () => context.push(
-                '/book/lrts_${b.id}?name=${Uri.encodeComponent(b.title)}'),
+                bookDetailRoute(
+                  'lrts_${b.id}',
+                  name: b.title,
+                  cover: b.cover,
+                )),
             borderRadius: BorderRadius.circular(20),
             child: Container(
               width: 300,
@@ -788,7 +793,11 @@ class _SectionCarousel extends StatelessWidget {
           final b = books[i];
           return InkWell(
             onTap: () => context.push(
-                '/book/lrts_${b.id}?name=${Uri.encodeComponent(b.title)}'),
+                bookDetailRoute(
+                  'lrts_${b.id}',
+                  name: b.title,
+                  cover: b.cover,
+                )),
             borderRadius: BorderRadius.circular(16),
             child: SizedBox(
               width: 124,
@@ -874,7 +883,11 @@ class _RowListSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: GestureDetector(
-                onTap: () => context.push('/book/lrts_${list[i].id}'),
+                onTap: () => context.push(bookDetailRoute(
+                  'lrts_${list[i].id}',
+                  name: list[i].title,
+                  cover: list[i].cover,
+                )),
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
